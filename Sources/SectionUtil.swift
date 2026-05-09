@@ -117,3 +117,44 @@ enum SectionUtil {
         return f.string(from: d)
     }
 }
+
+/// NSTextView 子类：支持把右上角某个矩形从 textContainer 排除（让文字自动绕开图片区）
+final class ImageHostTextView: NSTextView {
+    /// 设为非零后，会在右上角排除一个对应大小的区域
+    var exclusionImageSize: CGSize = .zero {
+        didSet { updateExclusion() }
+    }
+    /// 图片右侧/上方距离 textView 边界的内边距（用于和右上角图片视图位置对齐）
+    var exclusionPadding: NSEdgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 12, right: 0) {
+        didSet { updateExclusion() }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        updateExclusion()
+    }
+
+    private func updateExclusion() {
+        guard exclusionImageSize.width > 0, exclusionImageSize.height > 0 else {
+            textContainer?.exclusionPaths = []
+            return
+        }
+        let w = bounds.width
+        // 减去文本容器的 inset 和 lineFragmentPadding
+        let inset = textContainerInset
+        let frag = textContainer?.lineFragmentPadding ?? 0
+        let usableWidth = max(0, w - inset.width * 2 - frag * 2)
+        guard usableWidth > exclusionImageSize.width + 40 else {
+            // 太窄时不排除（避免文字被压成一列）
+            textContainer?.exclusionPaths = []
+            return
+        }
+        let rect = NSRect(
+            x: usableWidth - exclusionImageSize.width - exclusionPadding.left,
+            y: 0,
+            width: exclusionImageSize.width + exclusionPadding.left,
+            height: exclusionImageSize.height + exclusionPadding.bottom
+        )
+        textContainer?.exclusionPaths = [NSBezierPath(rect: rect)]
+    }
+}
