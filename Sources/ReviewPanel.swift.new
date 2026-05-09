@@ -420,8 +420,26 @@ final class ReviewPanel: NSPanel {
     }
 
     /// 把例句中的目标词加粗
-    private func highlight(_ text: String, word: String) -> String {
-        return text  // 单纯字符串，加粗在 attributed 层做。这里保持原 text。
+    private func highlight(_ text: String, word: String) -> NSAttributedString {
+        let base: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13),
+            .foregroundColor: NSColor.labelColor
+        ]
+        let m = NSMutableAttributedString(string: text, attributes: base)
+        let lower = (text as NSString).lowercased
+        let key = word.lowercased()
+        var searchRange = NSRange(location: 0, length: lower.count)
+        while searchRange.length > 0 {
+            let r = (lower as NSString).range(of: key, options: [], range: searchRange)
+            if r.location == NSNotFound { break }
+            m.addAttributes([
+                .font: NSFont.boldSystemFont(ofSize: 13),
+                .foregroundColor: NSColor.systemOrange
+            ], range: r)
+            let next = r.location + r.length
+            searchRange = NSRange(location: next, length: max(0, lower.count - next))
+        }
+        return m
     }
 
     /// 给一段引用句子做格式化（带高亮目标词）
