@@ -20,16 +20,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 检查辅助功能权限
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
         let accessibilityEnabled = AXIsProcessTrustedWithOptions(options as CFDictionary)
-        
+
+        // 启动 WordBook（会自动迁移旧 JSON）
+        _ = WordBook.shared
+
         DispatchQueue.main.async { [weak self] in
             self?.setupStatusItem()
             self?.setupPopover()
             self?.registerGlobalHotkey()
-            
+            self?.updateStatusBadge()
+
             // 显示权限状态
             if !accessibilityEnabled {
                 self?.showAccessibilityAlert()
             }
+
+            // 首次启动提示下载 ECDICT
+            self?.checkECDICTAvailability()
+
+            // 每日首次启动复习提醒
+            self?.maybeShowReviewReminder()
         }
     }
     
@@ -49,22 +59,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        
+
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "character.book.closed", accessibilityDescription: "快捷查词")
         }
-        
+
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "测试查词 (手动)", action: #selector(testLookup), keyEquivalent: "t"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "快捷键: ⌃L (查词/保存)", action: nil, keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "单词≤2个: 查词典", action: nil, keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "单词>2个: 保存到单词本", action: nil, keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "单词≤2个: 查词典，自动入历史", action: nil, keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "单词>2个: 保存到收藏", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "打开单词本", action: #selector(openWordBook), keyEquivalent: "b"))
+        let reviewItem = NSMenuItem(title: "开始复习", action: #selector(startReview), keyEquivalent: "r")
+        menu.addItem(reviewItem)
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "下载/更新离线词典 (ECDICT)", action: #selector(downloadECDICT), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "从本地文件导入词典…", action: #selector(importECDICT), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
+    }
+
+    /// 状态栏图标 badge（到期复习数量）
+    private func updateStatusBadge() {
+        guard let button = statusItem?.button else { return }
+        let due = WordBook.shared.dueFavoriteCount()
+        if due > 0 {
+            button.title = " \(due)"
+        } else {
+            button.title = ""
+        }
     }
     
     func setupPopover() {
@@ -161,35 +187,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func showDictionary(for text: String) {
         let normalizedText = normalizeSelectedText(text)
         guard !normalizedText.isEmpty else { return }
-        
+
         let wordCount = normalizedText.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
-        
+
         if wordCount > 2 {
+            // 句子：另外存为收藏
             saveToWordBook(sentence: normalizedText)
+            return
+        }
+
+        let lookupText = normalizedText.trimmingCharacters(in: .punctuationCharacters.union(.symbols))
+        let finalLookupText = lookupText.isEmpty ? normalizedText : lookupText
+
+        // 查词：系统词典 → ECDICT
+        let result = DictService.shared.lookup(finalLookupText)
+
+        // 记录到 history
+        WordBook.shared.recordLookup(
+            word: result?.word ?? finalLookupText,
+            context: normalizedText == finalLookupText ? nil : normalizedText
+        )
+
+        if let result {
+            let panel = HUDPanel(word: result.word, definition: result.definition, source: result.source.rawValue)
+            panel.show()
         } else {
-            let lookupText = normalizedText.trimmingCharacters(in: .punctuationCharacters.union(.symbols))
-            let finalLookupText = lookupText.isEmpty ? normalizedText : lookupText
-            
-            if let definition = DCSCopyTextDefinition(nil, finalLookupText as CFString, CFRangeMake(0, (finalLookupText as NSString).length))?.takeRetainedValue() as String? {
-                let panel = HUDPanel(word: finalLookupText, definition: definition)
-                panel.show()
-            } else {
-                let panel = HUDPanel(
-                    word: finalLookupText,
-                    definition: "未找到「\(finalLookupText)」的定义\n\n你也可以先打开系统“词典”App确认该词是否存在，或选中更干净的单词/短语后重试。"
-                )
-                panel.show()
-            }
+            let panel = HUDPanel(
+                word: finalLookupText,
+                definition: "未找到「\(finalLookupText)」的定义\n\n可试试：\n• 在系统『词典』 App 里启用「简明英汉字典」\n• 菜单「下载/更新离线词典」获取 ECDICT (含 77万词条)。"
+            )
+            panel.show()
         }
     }
     
     func saveToWordBook(sentence: String) {
         let words = sentence.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
         let firstWord = words.first ?? sentence
-        
-        WordBook.shared.add(word: firstWord, sentence: sentence)
-        
-        let panel = SavedPanel(word: firstWord, sentence: sentence, count: WordBook.shared.getCount())
+
+        _ = WordBook.shared.addFavorite(word: firstWord, sentence: sentence)
+        updateStatusBadge()
+
+        let panel = SavedPanel(word: firstWord, sentence: sentence, count: WordBook.shared.favoriteCount())
         panel.show()
     }
     
@@ -197,7 +235,148 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let panel = WordBookPanel()
         panel.show()
     }
-    
+
+    @objc func startReview() {
+        let due = WordBook.shared.getDueFavorites()
+        if due.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = "暂无到期复习的单词"
+            alert.informativeText = "现在还没有要复习的单词。先收藏一些单词、句子后，复习会按 SM-2 间隔自动安排。"
+            alert.runModal()
+            return
+        }
+        let panel = ReviewPanel(entries: due)
+        panel.show()
+    }
+
+    @objc func downloadECDICT() {
+        let alert = NSAlert()
+        alert.messageText = "下载 ECDICT 离线词典"
+        alert.informativeText = "将从 GitHub 下载 ECDICT 词典数据库（约 50MB，含 77万词条）到本机。需要联网。"
+        alert.addButton(withTitle: "开始下载")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        showECDICTDownloadProgress()
+    }
+
+    private func showECDICTDownloadProgress() {
+        let win = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 130),
+            styleMask: [.titled],
+            backing: .buffered, defer: false
+        )
+        win.title = "下载 ECDICT…"
+        win.center()
+
+        let label = NSTextField(labelWithString: "正在下载词典… 0%")
+        label.translatesAutoresizingMaskIntoConstraints = false
+        let bar = NSProgressIndicator()
+        bar.isIndeterminate = false
+        bar.minValue = 0; bar.maxValue = 1
+        bar.translatesAutoresizingMaskIntoConstraints = false
+
+        let content = NSView()
+        content.addSubview(label)
+        content.addSubview(bar)
+        win.contentView = content
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: content.topAnchor, constant: 24),
+            label.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
+            label.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
+            bar.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 14),
+            bar.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
+            bar.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20)
+        ])
+        win.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        ECDictionary.shared.downloadDictionary(progress: { p in
+            bar.doubleValue = p
+            label.stringValue = String(format: "正在下载词典… %.0f%%", p * 100)
+        }, completion: { result in
+            win.close()
+            let done = NSAlert()
+            switch result {
+            case .success:
+                done.messageText = "词典下载完成 ✅"
+                done.informativeText = "ECDICT 已可用，查不到的词会自动走这个词典。"
+            case .failure(let err):
+                done.messageText = "下载失败"
+                done.informativeText = "错误: \(err.localizedDescription)\n\n你也可以从 GitHub Releases 手动下载后，菜单选「从本地文件导入词典」。"
+            }
+            done.runModal()
+        })
+    }
+
+    @objc func importECDICT() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.data]
+        panel.message = "选择 ecdict.db / stardict.db / .zip 文件"
+        panel.begin { result in
+            guard result == .OK, let url = panel.url else { return }
+            do {
+                try ECDictionary.shared.importDictionary(from: url)
+                let a = NSAlert()
+                a.messageText = "导入成功 ✅"
+                a.informativeText = "词典已加载，可以查词了。"
+                a.runModal()
+            } catch {
+                let a = NSAlert()
+                a.messageText = "导入失败"
+                a.informativeText = "\(error.localizedDescription)"
+                a.runModal()
+            }
+        }
+    }
+
+    /// 每日首次启动复习提醒
+    private func maybeShowReviewReminder() {
+        let key = "QuickDict.lastReviewReminderDay"
+        let today = dayString(Date())
+        if UserDefaults.standard.string(forKey: key) == today { return }
+
+        let due = WordBook.shared.dueFavoriteCount()
+        guard due > 0 else { return }
+
+        UserDefaults.standard.set(today, forKey: key)
+
+        let alert = NSAlert()
+        alert.messageText = "今天有 \(due) 个单词待复习"
+        alert.informativeText = "要现在开始复习吗？可以随时从菜单栏「开始复习」中进入。"
+        alert.addButton(withTitle: "开始复习")
+        alert.addButton(withTitle: "稍后")
+        if alert.runModal() == .alertFirstButtonReturn {
+            startReview()
+        }
+    }
+
+    private func dayString(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date)
+    }
+
+    /// 检查 ECDICT 是否已下载，如果没有且从未提示过，提示下载
+    private func checkECDICTAvailability() {
+        if ECDictionary.shared.isReady { return }
+
+        let key = "QuickDict.ECDICTPromptedV1"
+        if UserDefaults.standard.bool(forKey: key) { return }
+        UserDefaults.standard.set(true, forKey: key)
+
+        let alert = NSAlert()
+        alert.messageText = "是否下载离线词典 ECDICT？"
+        alert.informativeText = "仅依赖系统词典可能查不到中文释义。推荐下载 ECDICT（约 50MB，含 77万词条、音标、考试标签）。随时可从菜单重新下载。"
+        alert.addButton(withTitle: "现在下载")
+        alert.addButton(withTitle: "以后再说")
+        if alert.runModal() == .alertFirstButtonReturn {
+            showECDICTDownloadProgress()
+        }
+    }
+
     @objc func testLookup() {
         // 手动测试：直接使用剪贴板内容查词
         let pasteboard = NSPasteboard.general
