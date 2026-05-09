@@ -128,7 +128,7 @@ class HUDPanel: NSPanel {
         scrollView.drawsBackground = false
         scrollView.autohidesScrollers = true
 
-        contentTextView = NSTextView()
+        contentTextView = ImageHostTextView()
         contentTextView.isEditable = false
         contentTextView.isSelectable = true
         contentTextView.backgroundColor = .clear
@@ -156,9 +156,9 @@ class HUDPanel: NSPanel {
             closeButton.heightAnchor.constraint(equalToConstant: 24),
 
             headerImageView.topAnchor.constraint(equalTo: visualEffect.topAnchor, constant: 12),
-            headerImageView.trailingAnchor.constraint(equalTo: closeButton.leadingAnchor, constant: -8),
-            headerImageView.widthAnchor.constraint(equalToConstant: 64),
-            headerImageView.heightAnchor.constraint(equalToConstant: 64),
+            headerImageView.trailingAnchor.constraint(equalTo: visualEffect.trailingAnchor, constant: -12),
+            headerImageView.widthAnchor.constraint(equalToConstant: 200),
+            headerImageView.heightAnchor.constraint(equalToConstant: 200),
 
             scrollView.topAnchor.constraint(equalTo: visualEffect.topAnchor, constant: 8),
             scrollView.leadingAnchor.constraint(equalTo: visualEffect.leadingAnchor, constant: 4),
@@ -192,6 +192,8 @@ class HUDPanel: NSPanel {
             if let imgPath, let img = NSImage(contentsOfFile: imgPath) {
                 self.headerImageView.image = img
                 self.headerImageView.isHidden = false
+                self.contentTextView.exclusionImageSize = NSSize(width: 200, height: 200)
+                self.renderAll()
             }
             if let extract, !extract.isEmpty {
                 let body = NSMutableAttributedString()
