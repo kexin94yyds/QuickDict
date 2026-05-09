@@ -188,36 +188,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let normalizedText = normalizeSelectedText(text)
         guard !normalizedText.isEmpty else { return }
 
-        let wordCount = normalizedText.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
-
-        if wordCount > 2 {
-            // 句子：另外存为收藏
-            saveToWordBook(sentence: normalizedText)
-            return
-        }
-
-        let lookupText = normalizedText.trimmingCharacters(in: .punctuationCharacters.union(.symbols))
-        let finalLookupText = lookupText.isEmpty ? normalizedText : lookupText
+        // 选定段里挑一个英文词做查询目标（去标点、过滤纯数字/符号、取最长的英文词）
+        let candidate = pickLookupWord(from: normalizedText) ?? normalizedText
+        let context = (candidate == normalizedText) ? nil : normalizedText
 
         // 查词：系统词典 → ECDICT
-        let result = DictService.shared.lookup(finalLookupText)
+        let result = DictService.shared.lookup(candidate)
 
-        // 记录到 history
-        WordBook.shared.recordLookup(
-            word: result?.word ?? finalLookupText,
-            context: normalizedText == finalLookupText ? nil : normalizedText
-        )
+        // 记录到 history（不自动保存为收藏，用户要保存自己点 ☆）
+        WordBook.shared.recordLookup(word: result?.word ?? candidate, context: context)
 
         if let result {
-            let panel = HUDPanel(word: result.word, definition: result.definition, source: result.source.rawValue)
+            let panel = HUDPanel(word: result.word,
+                                 definition: result.definition,
+                                 source: result.source.rawValue,
+                                 context: context)
             panel.show()
         } else {
             let panel = HUDPanel(
-                word: finalLookupText,
-                definition: "未找到「\(finalLookupText)」的定义\n\n可试试：\n• 在系统『词典』 App 里启用「简明英汉字典」\n• 菜单「下载/更新离线词典」获取 ECDICT (含 77万词条)。"
+                word: candidate,
+                definition: "未找到「\(candidate)」的定义\n\n可试试：\n• 在系统『词典』 App 里启用「简明英汉字典」\n• 菜单「下载/更新离线词典」获取 ECDICT (含 77万词条)。",
+                context: context
             )
             panel.show()
         }
+    }
+
+    /// 从一段选定文本里挑出最适合查询的英文单词
+    /// 规则：去标点；保留只含字母（含连字符）的 token；优先取最长（长度 ≥ 3）
+    private func pickLookupWord(from text: String) -> String? {
+        let separators = CharacterSet.whitespacesAndNewlines
+            .union(.punctuationCharacters).union(.symbols)
+        let tokens = text.components(separatedBy: separators).filter { !$0.isEmpty }
+        let englishWords = tokens.filter { tok in
+            tok.allSatisfy { $0.isLetter || $0 == "-" || $0 == "'" }
+                && tok.contains(where: { $0.isLetter })
+        }
+        // 单词数 ≤ 2 时直接拼接；多词时取最长那个
+        if englishWords.count <= 2 {
+            return englishWords.joined(separator: " ").isEmpty ? nil : englishWords.joined(separator: " ")
+        }
+        return englishWords.max(by: { $0.count < $1.count })
     }
     
     func saveToWordBook(sentence: String) {
