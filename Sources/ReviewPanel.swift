@@ -1,6 +1,6 @@
 import Cocoa
 
-/// 复习卡片：4 档评分 + Wikipedia 摘要+图 + HN 例句 + 你自己的语境 cross-ref
+/// 复习卡片：单一 NSTextView 渲染多区域内容（释义 / 你的语境 / Wikipedia / HN）
 final class ReviewPanel: NSPanel {
     private var queue: [FavoriteEntry]
     private var index: Int = 0
@@ -11,20 +11,25 @@ final class ReviewPanel: NSPanel {
     private var sentenceLabel: NSTextField!
     private var revealButton: NSButton!
 
-    // 释义/扩展信息容器
     private var contentScroll: NSScrollView!
-    private var contentStack: NSStackView!
+    private var contentTextView: NSTextView!
 
     private var ratingStack: NSStackView!
     private var progressLabel: NSTextField!
 
     private var defRevealed = false
 
+    // 各区域的当前内容（异步会更新）
+    private var defSection = NSAttributedString()
+    private var ownSection = NSAttributedString()
+    private var wikiSection = NSAttributedString()
+    private var hnSection = NSAttributedString()
+
     init(entries: [FavoriteEntry]) {
         self.queue = entries
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-        let w: CGFloat = 680
-        let h: CGFloat = 600
+        let w: CGFloat = 700
+        let h: CGFloat = 640
         let x = (screenFrame.width - w) / 2
         let y = (screenFrame.height - h) / 2
 
@@ -37,7 +42,7 @@ final class ReviewPanel: NSPanel {
         self.title = "复习"
         self.level = .floating
         self.isReleasedWhenClosed = false
-        self.minSize = NSSize(width: 560, height: 480)
+        self.minSize = NSSize(width: 580, height: 500)
 
         setupUI()
         loadCurrent()
@@ -71,7 +76,6 @@ final class ReviewPanel: NSPanel {
         phoneticLabel.textColor = .secondaryLabelColor
         phoneticLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        // 用户的 sentence（主角）
         sentenceLabel = NSTextField(wrappingLabelWithString: "")
         sentenceLabel.font = .systemFont(ofSize: 14, weight: .medium)
         sentenceLabel.maximumNumberOfLines = 4
@@ -87,26 +91,29 @@ final class ReviewPanel: NSPanel {
         revealButton.translatesAutoresizingMaskIntoConstraints = false
         revealButton.controlSize = .large
 
-        // 释义和扩展滚动区
+        // 单一 NSTextView 渲染全部内容
         contentScroll = NSScrollView()
         contentScroll.translatesAutoresizingMaskIntoConstraints = false
         contentScroll.hasVerticalScroller = true
         contentScroll.borderType = .bezelBorder
         contentScroll.drawsBackground = false
         contentScroll.isHidden = true
+        contentScroll.autohidesScrollers = false
 
-        contentStack = NSStackView()
-        contentStack.orientation = .vertical
-        contentStack.alignment = .leading
-        contentStack.distribution = .fill
-        contentStack.spacing = 14
-        contentStack.edgeInsets = NSEdgeInsets(top: 12, left: 14, bottom: 12, right: 14)
-        contentStack.translatesAutoresizingMaskIntoConstraints = false
-
-        let documentView = FlippedView()
-        documentView.translatesAutoresizingMaskIntoConstraints = false
-        documentView.addSubview(contentStack)
-        contentScroll.documentView = documentView
+        contentTextView = NSTextView()
+        contentTextView.isEditable = false
+        contentTextView.isSelectable = true
+        contentTextView.backgroundColor = .clear
+        contentTextView.drawsBackground = false
+        contentTextView.textContainerInset = NSSize(width: 12, height: 12)
+        contentTextView.textContainer?.lineFragmentPadding = 0
+        contentTextView.isVerticallyResizable = true
+        contentTextView.isHorizontallyResizable = false
+        contentTextView.autoresizingMask = [.width]
+        contentTextView.textContainer?.widthTracksTextView = true
+        contentTextView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                                         height: CGFloat.greatestFiniteMagnitude)
+        contentScroll.documentView = contentTextView
 
         // 4 档评分
         ratingStack = NSStackView()
@@ -167,16 +174,6 @@ final class ReviewPanel: NSPanel {
             contentScroll.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
             contentScroll.bottomAnchor.constraint(equalTo: ratingStack.topAnchor, constant: -14),
 
-            documentView.topAnchor.constraint(equalTo: contentScroll.contentView.topAnchor),
-            documentView.leadingAnchor.constraint(equalTo: contentScroll.contentView.leadingAnchor),
-            documentView.trailingAnchor.constraint(equalTo: contentScroll.contentView.trailingAnchor),
-            documentView.widthAnchor.constraint(equalTo: contentScroll.contentView.widthAnchor),
-
-            contentStack.topAnchor.constraint(equalTo: documentView.topAnchor),
-            contentStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
-            contentStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
-            contentStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor),
-
             ratingStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
             ratingStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
             ratingStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -16),
@@ -201,8 +198,11 @@ final class ReviewPanel: NSPanel {
         revealButton.isHidden = false
         headerImageView.isHidden = true
         headerImageView.image = nil
-        // 清空 stack
-        contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        defSection = NSAttributedString()
+        ownSection = NSAttributedString()
+        wikiSection = NSAttributedString()
+        hnSection = NSAttributedString()
+        renderAll()
     }
 
     @objc private func revealDefinition() {
@@ -214,43 +214,47 @@ final class ReviewPanel: NSPanel {
         ratingStack.isHidden = false
         revealButton.isHidden = true
 
-        // 释义（同步、最快）
+        // 释义（同步）
         let result = DictService.shared.lookup(entry.word)
         let definition = result?.definition ?? "（未找到释义）"
-
-        // 提取音标显示在标题下
-        if let phonetic = extractPhonetic(from: definition) {
+        if let phonetic = SectionUtil.extractPhonetic(from: definition) {
             phoneticLabel.stringValue = phonetic
         }
+        let sourceTag = result.map { "  ·  \($0.source.rawValue)" } ?? ""
+        defSection = SectionUtil.section(
+            header: "📖 释义" + sourceTag,
+            body: DefinitionFormatter.attributedString(
+                word: entry.word, definition: definition,
+                includeTitle: false, bodySize: 13))
 
-        appendSection(title: "📖 释义" + (result.map { "  ·  \($0.source.rawValue)" } ?? ""),
-                      attributedBody: DefinitionFormatter.attributedString(
-                        word: entry.word, definition: definition,
-                        includeTitle: false, bodySize: 13))
-
-        // 你自己的语境（本地，立即）
+        // 你自己的语境（同步）
         let mine = EnrichService.shared.ownContexts(for: entry.word, excludingID: entry.id, limit: 5)
         if !mine.isEmpty {
             let body = NSMutableAttributedString()
-            for ctx in mine {
-                body.append(quoteLine(ctx.sentence, footer: "你于 \(shortDate(ctx.savedAt)) 收藏"))
+            for c in mine {
+                body.append(SectionUtil.quote(c.sentence, footer: "你于 \(SectionUtil.shortDate(c.savedAt)) 收藏过"))
                 body.append(NSAttributedString(string: "\n"))
             }
-            appendSection(title: "🪞 你自己的语境（\(mine.count)）", attributedBody: body)
+            ownSection = SectionUtil.section(header: "🪞 你自己的语境（\(mine.count)）", body: body)
         }
 
-        // 异步加载 Wikipedia + HN（不阻塞 UI）
-        let wikiSection = appendLoadingSection(title: "🌐 Wikipedia 摘要")
-        let hnSection = appendLoadingSection(title: "🟧 Hacker News 真实例句")
+        // 占位
+        wikiSection = SectionUtil.section(header: "🌐 Wikipedia",
+                                          body: SectionUtil.faintLine("加载中…"))
+        hnSection = SectionUtil.section(header: "🟧 Hacker News 真实例句",
+                                        body: SectionUtil.faintLine("加载中…"))
 
+        renderAll()
+
+        // 异步 Wikipedia
         EnrichService.shared.fetchWikipedia(word: entry.word) { [weak self] extract, pageURL, imgPath in
             guard let self else { return }
-            // 标题图
+            // 处于此卡片才更新
+            guard self.index < self.queue.count, self.queue[self.index].id == entry.id else { return }
             if let imgPath, let img = NSImage(contentsOfFile: imgPath) {
                 self.headerImageView.image = img
                 self.headerImageView.isHidden = false
             }
-            // 摘要
             if let extract, !extract.isEmpty {
                 let body = NSMutableAttributedString()
                 body.append(NSAttributedString(string: extract,
@@ -258,35 +262,50 @@ final class ReviewPanel: NSPanel {
                                                             .foregroundColor: NSColor.labelColor]))
                 if let pageURL {
                     body.append(NSAttributedString(string: "\n\n"))
-                    let link = NSAttributedString(string: "→ \(pageURL.absoluteString)",
-                                                  attributes: [.link: pageURL,
-                                                               .font: NSFont.systemFont(ofSize: 11),
-                                                               .foregroundColor: NSColor.linkColor])
-                    body.append(link)
+                    body.append(NSAttributedString(string: "→ \(pageURL.absoluteString)",
+                                                   attributes: [.link: pageURL,
+                                                                .font: NSFont.systemFont(ofSize: 11),
+                                                                .foregroundColor: NSColor.linkColor]))
                 }
-                self.replaceSection(wikiSection, with: body)
+                self.wikiSection = SectionUtil.section(header: "🌐 Wikipedia", body: body)
             } else {
-                self.replaceSection(wikiSection, with: NSAttributedString(string: "（无 Wikipedia 条目）",
-                                                                          attributes: self.faintAttrs))
+                self.wikiSection = SectionUtil.section(header: "🌐 Wikipedia",
+                                                       body: SectionUtil.faintLine("（无 Wikipedia 条目）"))
             }
+            self.renderAll()
         }
 
+        // 异步 HN
         EnrichService.shared.fetchHackerNews(word: entry.word) { [weak self] examples in
             guard let self else { return }
+            guard self.index < self.queue.count, self.queue[self.index].id == entry.id else { return }
             if examples.isEmpty {
-                self.replaceSection(hnSection, with: NSAttributedString(string: "（HN 上暂未搜到合适例句）",
-                                                                        attributes: self.faintAttrs))
-                return
+                self.hnSection = SectionUtil.section(header: "🟧 Hacker News 真实例句",
+                                                     body: SectionUtil.faintLine("（HN 上暂未搜到合适例句）"))
+            } else {
+                let body = NSMutableAttributedString()
+                for ex in examples {
+                    let snippet = SectionUtil.highlight(ex.snippet, word: entry.word)
+                    body.append(SectionUtil.quoteAttr(snippet,
+                                                      footer: "@\(ex.author) · \(ex.storyTitle)",
+                                                      link: ex.url))
+                    body.append(NSAttributedString(string: "\n"))
+                }
+                self.hnSection = SectionUtil.section(header: "🟧 Hacker News 真实例句", body: body)
             }
-            let body = NSMutableAttributedString()
-            for ex in examples {
-                body.append(self.quoteLine(self.highlight(ex.snippet, word: entry.word),
-                                           footer: "@\(ex.author) · \(ex.storyTitle)",
-                                           link: ex.url))
-                body.append(NSAttributedString(string: "\n"))
-            }
-            self.replaceSection(hnSection, with: body)
+            self.renderAll()
         }
+    }
+
+    private func renderAll() {
+        let m = NSMutableAttributedString()
+        m.append(defSection)
+        m.append(ownSection)
+        m.append(wikiSection)
+        m.append(hnSection)
+        contentTextView.textStorage?.beginEditing()
+        contentTextView.textStorage?.setAttributedString(m)
+        contentTextView.textStorage?.endEditing()
     }
 
     @objc private func rateButtonTapped(_ sender: NSButton) {
@@ -312,10 +331,8 @@ final class ReviewPanel: NSPanel {
         self.close()
     }
 
-    // MARK: - keyboard
-
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 49 { // space
+        if event.keyCode == 49 {
             if !defRevealed { revealDefinition(); return }
         }
         if defRevealed {
@@ -332,156 +349,4 @@ final class ReviewPanel: NSPanel {
         makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
-
-    // MARK: - section helpers
-
-    private var faintAttrs: [NSAttributedString.Key: Any] {
-        [.font: NSFont.systemFont(ofSize: 12),
-         .foregroundColor: NSColor.tertiaryLabelColor]
-    }
-
-    private func appendSection(title: String, attributedBody: NSAttributedString) -> NSView {
-        let container = NSView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-        let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        titleLabel.textColor = .labelColor
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let bodyView = NSTextView()
-        bodyView.isEditable = false
-        bodyView.isSelectable = true
-        bodyView.backgroundColor = .clear
-        bodyView.drawsBackground = false
-        bodyView.textContainerInset = NSSize(width: 0, height: 4)
-        bodyView.textContainer?.lineFragmentPadding = 0
-        bodyView.textContainer?.widthTracksTextView = true
-        bodyView.isVerticallyResizable = true
-        bodyView.isHorizontallyResizable = false
-        bodyView.translatesAutoresizingMaskIntoConstraints = false
-        bodyView.textStorage?.setAttributedString(attributedBody)
-
-        container.addSubview(titleLabel)
-        container.addSubview(bodyView)
-
-        NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: container.topAnchor),
-            titleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            titleLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-
-            bodyView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
-            bodyView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            bodyView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            bodyView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
-        ])
-
-        contentStack.addArrangedSubview(container)
-        // 占满 stack 宽度
-        container.widthAnchor.constraint(equalTo: contentStack.widthAnchor,
-                                         constant: -(contentStack.edgeInsets.left + contentStack.edgeInsets.right)).isActive = true
-        return container
-    }
-
-    /// 占位 loading section，以后替换 body
-    private func appendLoadingSection(title: String) -> NSView {
-        let placeholder = NSAttributedString(string: "加载中…", attributes: faintAttrs)
-        return appendSection(title: title, attributedBody: placeholder)
-    }
-
-    private func replaceSection(_ container: NSView, with attributed: NSAttributedString) {
-        // container.subviews[1] 是 bodyView
-        if let body = container.subviews.compactMap({ $0 as? NSTextView }).first {
-            body.textStorage?.setAttributedString(attributed)
-        }
-    }
-
-    /// 给一段引用句子做格式化（缩进左 bar + 灰色底）
-    private func quoteLine(_ text: String, footer: String, link: URL? = nil) -> NSAttributedString {
-        let m = NSMutableAttributedString()
-        let para = NSMutableParagraphStyle()
-        para.firstLineHeadIndent = 12
-        para.headIndent = 12
-        para.paragraphSpacingBefore = 4
-        m.append(NSAttributedString(string: text + "\n",
-                                    attributes: [.font: NSFont.systemFont(ofSize: 13),
-                                                 .foregroundColor: NSColor.labelColor,
-                                                 .paragraphStyle: para]))
-        var fAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.tertiaryLabelColor,
-            .paragraphStyle: para
-        ]
-        if let link {
-            fAttrs[.link] = link
-            fAttrs[.foregroundColor] = NSColor.linkColor
-        }
-        m.append(NSAttributedString(string: footer + "\n", attributes: fAttrs))
-        return m
-    }
-
-    /// 把例句中的目标词加粗
-    private func highlight(_ text: String, word: String) -> NSAttributedString {
-        let base: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 13),
-            .foregroundColor: NSColor.labelColor
-        ]
-        let m = NSMutableAttributedString(string: text, attributes: base)
-        let ns = text as NSString
-        let lower = ns.lowercased as NSString
-        let key = word.lowercased()
-        let totalLen = lower.length
-        var searchRange = NSRange(location: 0, length: totalLen)
-        while searchRange.length > 0 {
-            let r = lower.range(of: key, options: [], range: searchRange)
-            if r.location == NSNotFound { break }
-            m.addAttributes([
-                .font: NSFont.boldSystemFont(ofSize: 13),
-                .foregroundColor: NSColor.systemOrange
-            ], range: r)
-            let next = r.location + r.length
-            searchRange = NSRange(location: next, length: max(0, totalLen - next))
-        }
-        return m
-    }
-
-    /// 给一段引用句子做格式化（带高亮目标词）
-    private func quoteLine(_ attrText: NSAttributedString, footer: String, link: URL? = nil) -> NSAttributedString {
-        let m = NSMutableAttributedString()
-        let para = NSMutableParagraphStyle()
-        para.firstLineHeadIndent = 12
-        para.headIndent = 12
-        para.paragraphSpacingBefore = 4
-        let body = NSMutableAttributedString(attributedString: attrText)
-        body.addAttribute(.paragraphStyle, value: para,
-                          range: NSRange(location: 0, length: body.length))
-        m.append(body)
-        m.append(NSAttributedString(string: "\n"))
-        var fAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.tertiaryLabelColor,
-            .paragraphStyle: para
-        ]
-        if let link {
-            fAttrs[.link] = link
-            fAttrs[.foregroundColor] = NSColor.linkColor
-        }
-        m.append(NSAttributedString(string: footer + "\n", attributes: fAttrs))
-        return m
-    }
-
-    private func extractPhonetic(from text: String) -> String? {
-        guard let r = text.range(of: #"\|[^|]{1,80}\|"#, options: .regularExpression) else { return nil }
-        return String(text[r])
-    }
-
-    private func shortDate(_ d: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "MM/dd HH:mm"
-        return f.string(from: d)
-    }
-}
-
-/// y 轴翻转的容器，用于 NSScrollView 的 documentView，避免内容从底部画起
-private class FlippedView: NSView {
-    override var isFlipped: Bool { true }
 }
