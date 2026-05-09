@@ -11,7 +11,7 @@ class HUDPanel: NSPanel {
     private var favoriteButton: NSButton?
     private var headerImageView: NSImageView!
 
-    private var contentTextView: NSTextView!
+    private var contentTextView: ImageHostTextView!
 
     private var defSection = NSAttributedString()
     private var ownSection = NSAttributedString()
