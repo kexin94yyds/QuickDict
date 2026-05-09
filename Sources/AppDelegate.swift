@@ -606,7 +606,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let bundleName = app.bundleURL?.lastPathComponent ?? ""
             let localizedName = app.localizedName ?? ""
             
-            let sameBundleID = app.bundleIdentifier == Bundle.main.bundleIdentifier
+            let myBundleID = Bundle.main.bundleIdentifier
+            let sameBundleID = (myBundleID != nil) && (app.bundleIdentifier == myBundleID)
             let looksLikeQuickDict = executableName == "QuickDict"
                 || bundleName == "QuickDict.app"
                 || bundleName == "快捷查词.app"
