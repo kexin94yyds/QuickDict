@@ -81,15 +81,57 @@ final class EnrichService {
                 return nil
             }()
 
-            // 没有图片直接回调
-            guard let imageURL else {
-                DispatchQueue.main.async { completion(extract, pageURL, nil) }
+            // 主接口有图：直接下载
+            if let imageURL {
+                self.downloadImage(from: imageURL, key: word) { localPath in
+                    DispatchQueue.main.async { completion(extract, pageURL, localPath) }
+                }
                 return
             }
-            // 下载图片到本地缓存
-            self.downloadImage(from: imageURL, key: word) { localPath in
-                DispatchQueue.main.async { completion(extract, pageURL, localPath) }
+            // 主接口没有图（消歧义/抽象词），回退到搜索接口找一张
+            self.fetchImageFallback(for: word) { fallbackPath in
+                DispatchQueue.main.async { completion(extract, pageURL, fallbackPath) }
             }
+        }
+        task.resume()
+    }
+
+    /// Wikipedia search + pageimages 回退：找第一个有缩略图的结果
+    private func fetchImageFallback(for word: String, completion: @escaping (String?) -> Void) {
+        guard let encoded = word.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            completion(nil); return
+        }
+        // 用 generator=search + prop=pageimages 一次拿到 top 候选 + 缩略图
+        let urlStr = "https://en.wikipedia.org/w/api.php?action=query&format=json"
+            + "&prop=pageimages&piprop=thumbnail&pithumbsize=480"
+            + "&generator=search&gsrsearch=\(encoded)&gsrlimit=6"
+        guard let url = URL(string: urlStr) else { completion(nil); return }
+        var req = URLRequest(url: url)
+        req.setValue("QuickDict-mac/1.0", forHTTPHeaderField: "User-Agent")
+        let task = session.dataTask(with: req) { [weak self] data, _, err in
+            guard let self, let data, err == nil,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let query = json["query"] as? [String: Any],
+                  let pages = query["pages"] as? [String: Any] else {
+                completion(nil); return
+            }
+            // 按 search index 排序候选
+            let sorted = pages.values.compactMap { $0 as? [String: Any] }.sorted { a, b in
+                let ai = (a["index"] as? Int) ?? 99
+                let bi = (b["index"] as? Int) ?? 99
+                return ai < bi
+            }
+            for page in sorted {
+                if let thumb = page["thumbnail"] as? [String: Any],
+                   let s = thumb["source"] as? String,
+                   let imageURL = URL(string: s) {
+                    self.downloadImage(from: imageURL, key: word) { path in
+                        completion(path)
+                    }
+                    return
+                }
+            }
+            completion(nil)
         }
         task.resume()
     }
