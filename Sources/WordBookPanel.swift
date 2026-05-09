@@ -167,7 +167,14 @@ class WordBookPanel: NSPanel {
     }
 
     @objc private func tabChanged(_ sender: NSSegmentedControl) {
-        currentTab = Tab(rawValue: sender.selectedSegment) ?? .favorites
+        let newTab = Tab(rawValue: sender.selectedSegment) ?? .favorites
+        if newTab == currentTab { return }
+        // 先清空旧数据并 reloadData，避免 rebuildColumns 时 NSTableView 重用旧 row views
+        // 调用 viewFor 访问不匹配的数组越界。
+        favorites.removeAll()
+        history.removeAll()
+        tableView.reloadData()
+        currentTab = newTab
         rebuildColumns()
         reload()
     }
@@ -335,6 +342,7 @@ extension WordBookPanel: NSTableViewDataSource, NSTableViewDelegate {
 
         switch currentTab {
         case .favorites:
+            guard row >= 0, row < favorites.count else { return cell }
             let e = favorites[row]
             switch id {
             case "word":
@@ -361,6 +369,7 @@ extension WordBookPanel: NSTableViewDataSource, NSTableViewDelegate {
             default: break
             }
         case .history:
+            guard row >= 0, row < history.count else { return cell }
             let e = history[row]
             switch id {
             case "word":
