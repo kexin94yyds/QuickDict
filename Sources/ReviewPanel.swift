@@ -151,8 +151,8 @@ final class ReviewPanel: NSPanel {
 
             headerImageView.topAnchor.constraint(equalTo: progressLabel.bottomAnchor, constant: 8),
             headerImageView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-            headerImageView.widthAnchor.constraint(equalToConstant: 110),
-            headerImageView.heightAnchor.constraint(equalToConstant: 110),
+            headerImageView.widthAnchor.constraint(equalToConstant: 180),
+            headerImageView.heightAnchor.constraint(equalToConstant: 180),
 
             wordLabel.topAnchor.constraint(equalTo: progressLabel.bottomAnchor, constant: 12),
             wordLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
