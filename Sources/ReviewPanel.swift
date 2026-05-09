@@ -153,7 +153,13 @@ final class ReviewPanel: NSPanel {
         let entry = queue[index]
         let result = DictService.shared.lookup(entry.word)
         let text = result?.definition ?? "（未找到释义）"
-        definitionView.string = text
+        let attr = DefinitionFormatter.attributedString(
+            word: result?.word ?? entry.word,
+            definition: text,
+            titleSize: 18,
+            bodySize: 13
+        )
+        definitionView.textStorage?.setAttributedString(attr)
         defRevealed = true
         definitionScroll.isHidden = false
         ratingStack.isHidden = false
