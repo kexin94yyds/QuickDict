@@ -335,6 +335,37 @@ final class Database {
         return out
     }
 
+    /// 在收藏的 sentence 里搜索包含此词的句子（用作 cross-ref）
+    func searchFavoriteSentences(word: String, excludingID: UUID? = nil, limit: Int = 5) -> [OwnContext] {
+        queue.sync {
+            // 整词匹配（前后是空白/标点/句首句尾）
+            let sql = """
+                SELECT id, sentence, added_at FROM favorites
+                WHERE (' ' || lower(sentence) || ' ') LIKE ('%' || ? || '%')
+                ORDER BY added_at DESC
+                LIMIT ?
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+            let key = " \(word.lowercased()) "
+            sqlite3_bind_text(stmt, 1, key, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int(stmt, 2, Int32(limit + 1)) // +1 防止 excludingID 占位
+
+            var out: [OwnContext] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let idStr = String(cString: sqlite3_column_text(stmt, 0))
+                guard let id = UUID(uuidString: idStr) else { continue }
+                if let exclude = excludingID, id == exclude { continue }
+                let sentence = String(cString: sqlite3_column_text(stmt, 1))
+                let savedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 2))
+                out.append(OwnContext(sentence: sentence, savedAt: savedAt, id: id))
+                if out.count >= limit { break }
+            }
+            return out
+        }
+    }
+
     // MARK: - Dict cache
 
     func cacheDefinition(word: String, source: String, definition: String) {
