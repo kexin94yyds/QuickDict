@@ -25,21 +25,41 @@ final class DictService {
         let word = sanitize(rawWord)
         guard !word.isEmpty else { return nil }
 
-        // 1) 苹果系统词典
-        if let def = appleLookup(word), !def.isEmpty {
-            return LookupResult(word: word, definition: def, source: .appleDictionary)
+        let appleDef = appleLookup(word)
+        let ecdictEntry = ECDictionary.shared.lookup(word)
+
+        // 把 ECDICT 的中文/词性/标签部分单独抽出来（不含原词标题）
+        let ecdictTrimmed: String? = ecdictEntry.map { entry in
+            ECDictionary.format(entry)
+                .replacingOccurrences(of: "^\(entry.word)\\s*\\n?", with: "",
+                                      options: .regularExpression)
         }
 
-        // 2) ECDICT 离线词典
-        if let entry = ECDictionary.shared.lookup(word) {
+        // 优先苹果词典；如果苹果命中但没中文，追加 ECDICT 的中文部分
+        if let apple = appleDef, !apple.isEmpty {
+            if containsChinese(apple) || ecdictTrimmed == nil {
+                return LookupResult(word: word, definition: apple, source: .appleDictionary)
+            }
+            // 合并
+            let merged = apple + "\n\n— 中文释义 (ECDICT) ——\n" + (ecdictTrimmed ?? "")
+            return LookupResult(word: word, definition: merged, source: .appleDictionary)
+        }
+
+        // 苹果没命中，回退到 ECDICT
+        if let entry = ecdictEntry {
             let formatted = ECDictionary.format(entry)
-            // 如果 ECDICT 命中的是变体的 lemma，使用 lemma 作为单词显示
             let actual = entry.word.isEmpty ? word : entry.word
             return LookupResult(word: actual, definition: formatted, source: .ecdict)
         }
 
-        // 3) 苹果词典对原词查不到，尝试用小写再查一次（已在 sanitize 后基本一致）
         return nil
+    }
+
+    private func containsChinese(_ s: String) -> Bool {
+        for scalar in s.unicodeScalars {
+            if (0x4E00...0x9FFF).contains(scalar.value) { return true }
+        }
+        return false
     }
 
     private func appleLookup(_ word: String) -> String? {
