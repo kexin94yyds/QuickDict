@@ -6,6 +6,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var popover: NSPopover!
     var eventMonitor: Any?
     var hotKeyRef: EventHotKeyRef?
+    var hotKeyRef2: EventHotKeyRef?
     var hotKeyHandler: EventHandlerRef?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -132,6 +133,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if hotKeyID.id == 1 {
                     NSLog("快捷键触发，开始查词")
                     delegate.lookupSelectedText()
+                } else if hotKeyID.id == 2 {
+                    NSLog("快捷键触发，打开收藏库")
+                    DispatchQueue.main.async { delegate.openWordBook() }
                 }
                 
                 return noErr
@@ -162,6 +166,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         
         NSLog("注册快捷键状态: \(registerStatus)")
+
+        // ⇧⌘B → 打开收藏库
+        let hotKeyID2 = EventHotKeyID(signature: fourCharCode("QDBK"), id: 2)
+        let registerStatus2 = RegisterEventHotKey(
+            UInt32(kVK_ANSI_B),
+            UInt32(cmdKey | shiftKey),
+            hotKeyID2,
+            GetApplicationEventTarget(),
+            0,
+            &hotKeyRef2
+        )
+        NSLog("注册收藏库快捷键状态: \(registerStatus2)")
     }
     
     func lookupSelectedText() {
@@ -411,6 +427,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSEvent.removeMonitor(monitor)
         }
         
+        if let hotKeyRef2 {
+            UnregisterEventHotKey(hotKeyRef2)
+        }
         if let hotKeyRef {
             UnregisterEventHotKey(hotKeyRef)
         }
