@@ -3,10 +3,16 @@ import Cocoa
 class HUDPanel: NSPanel {
     private var word: String
     private var definition: String
-    
-    init(word: String, definition: String) {
+    private var source: String?
+    private var globalClickMonitor: Any?
+    private var localKeyMonitor: Any?
+    private var autoCloseWorkItem: DispatchWorkItem?
+    private var favoriteButton: NSButton?
+
+    init(word: String, definition: String, source: String? = nil) {
         self.word = word
         self.definition = definition
+        self.source = source
         
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
         let panelWidth: CGFloat = 450
@@ -66,6 +72,17 @@ class HUDPanel: NSPanel {
         closeButton.translatesAutoresizingMaskIntoConstraints = false
         closeButton.isBordered = false
         closeButton.font = NSFont.systemFont(ofSize: 18, weight: .light)
+
+        let favBtn = NSButton(title: "☆ 收藏", target: self, action: #selector(addToFavorites))
+        favBtn.translatesAutoresizingMaskIntoConstraints = false
+        favBtn.bezelStyle = .inline
+        favBtn.font = NSFont.systemFont(ofSize: 11)
+        favoriteButton = favBtn
+
+        let sourceLabel = NSTextField(labelWithString: source.map { "来源：\($0)" } ?? "")
+        sourceLabel.translatesAutoresizingMaskIntoConstraints = false
+        sourceLabel.font = NSFont.systemFont(ofSize: 10)
+        sourceLabel.textColor = .tertiaryLabelColor
         
         let scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -87,17 +104,25 @@ class HUDPanel: NSPanel {
         
         visualEffect.addSubview(scrollView)
         visualEffect.addSubview(closeButton)
-        
+        visualEffect.addSubview(favBtn)
+        visualEffect.addSubview(sourceLabel)
+
         NSLayoutConstraint.activate([
             closeButton.topAnchor.constraint(equalTo: visualEffect.topAnchor, constant: 8),
             closeButton.trailingAnchor.constraint(equalTo: visualEffect.trailingAnchor, constant: -8),
             closeButton.widthAnchor.constraint(equalToConstant: 24),
             closeButton.heightAnchor.constraint(equalToConstant: 24),
-            
+
             scrollView.topAnchor.constraint(equalTo: visualEffect.topAnchor, constant: 12),
             scrollView.leadingAnchor.constraint(equalTo: visualEffect.leadingAnchor, constant: 8),
             scrollView.trailingAnchor.constraint(equalTo: visualEffect.trailingAnchor, constant: -8),
-            scrollView.bottomAnchor.constraint(equalTo: visualEffect.bottomAnchor, constant: -12)
+            scrollView.bottomAnchor.constraint(equalTo: favBtn.topAnchor, constant: -8),
+
+            favBtn.leadingAnchor.constraint(equalTo: visualEffect.leadingAnchor, constant: 12),
+            favBtn.bottomAnchor.constraint(equalTo: visualEffect.bottomAnchor, constant: -10),
+
+            sourceLabel.trailingAnchor.constraint(equalTo: visualEffect.trailingAnchor, constant: -12),
+            sourceLabel.bottomAnchor.constraint(equalTo: visualEffect.bottomAnchor, constant: -10)
         ])
         
         textView.frame = scrollView.bounds
@@ -225,28 +250,48 @@ class HUDPanel: NSPanel {
     }
     
     private func setupAutoClose() {
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        // Esc 关闭
+        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == 53 {
                 self?.closePanel()
                 return nil
             }
             return event
         }
-        
-        NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+
+        // 只在「点击面板外部」时关闭（修复：原来点面板内也会立即关）
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             self?.closePanel()
         }
     }
-    
+
     @objc private func closePanel() {
+        autoCloseWorkItem?.cancel()
+        autoCloseWorkItem = nil
+        if let m = globalClickMonitor { NSEvent.removeMonitor(m); globalClickMonitor = nil }
+        if let m = localKeyMonitor { NSEvent.removeMonitor(m); localKeyMonitor = nil }
         self.orderOut(nil)
     }
-    
+
+    @objc private func addToFavorites() {
+        let sentence = definition.split(separator: "\n").first.map(String.init) ?? definition
+        _ = WordBook.shared.addFavorite(word: word, sentence: String(sentence.prefix(120)))
+        favoriteButton?.title = "★ 已收藏"
+        favoriteButton?.isEnabled = false
+    }
+
+    deinit {
+        if let m = globalClickMonitor { NSEvent.removeMonitor(m) }
+        if let m = localKeyMonitor { NSEvent.removeMonitor(m) }
+    }
+
     func show() {
         self.makeKeyAndOrderFront(nil)
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+
+        let workItem = DispatchWorkItem { [weak self] in
             self?.closePanel()
         }
+        autoCloseWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: workItem)
     }
 }
