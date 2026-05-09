@@ -4,6 +4,7 @@ class HUDPanel: NSPanel {
     private let word: String
     private let definition: String
     private let source: String?
+    private let context: String?
 
     private var globalClickMonitor: Any?
     private var localKeyMonitor: Any?
