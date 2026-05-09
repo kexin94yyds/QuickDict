@@ -19,10 +19,11 @@ class HUDPanel: NSPanel {
     private var wikiSection = NSAttributedString()
     private var hnSection = NSAttributedString()
 
-    init(word: String, definition: String, source: String? = nil) {
+    init(word: String, definition: String, source: String? = nil, context: String? = nil) {
         self.word = word
         self.definition = definition
         self.source = source
+        self.context = context
 
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
         let panelWidth: CGFloat = 540
@@ -81,7 +82,7 @@ class HUDPanel: NSPanel {
 
         // 占位
         wikiSection = SectionUtil.section(header: "🌐 Wikipedia", body: SectionUtil.faintLine("加载中…"))
-        hnSection = SectionUtil.section(header: "🟧 Hacker News 真实例句", body: SectionUtil.faintLine("加载中…"))
+        hnSection = SectionUtil.section(header: "🟧 Hacker Ne ws 真实例句", body: SectionUtil.faintLine("加载中…"))
 
         renderAll()
         loadEnrichmentsAsync()
@@ -258,8 +259,14 @@ class HUDPanel: NSPanel {
     }
 
     @objc private func addToFavorites() {
-        let sentence = definition.split(separator: "\n").first.map(String.init) ?? definition
-        _ = WordBook.shared.addFavorite(word: word, sentence: String(sentence.prefix(120)))
+        // 优先用选区原句作为 sentence；没有才起用释义首行
+        let sentence: String = {
+            if let ctx = context, !ctx.isEmpty {
+                return ctx
+            }
+            return definition.split(separator: "\n").first.map(String.init) ?? definition
+        }()
+        _ = WordBook.shared.addFavorite(word: word, sentence: String(sentence.prefix(400)))
         favoriteButton?.title = "★ 已收藏"
         favoriteButton?.isEnabled = false
     }
