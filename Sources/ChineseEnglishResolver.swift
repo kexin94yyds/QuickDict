@@ -60,7 +60,13 @@ final class ChineseEnglishResolver {
         guard containsCJK(original) else { return nil }
 
         var candidates: [String] = []
-        append(&candidates, builtInCandidates[original] ?? [])
+        if let exact = builtInCandidates[original] {
+            append(&candidates, exact)
+        } else if let contained = builtInCandidates.keys
+            .filter({ original.contains($0) })
+            .max(by: { $0.count < $1.count }) {
+            append(&candidates, builtInCandidates[contained] ?? [])
+        }
         append(&candidates, ECDictionary.shared.lookupByChinese(original, limit: 8).map(\.word))
 
         let filtered = candidates
