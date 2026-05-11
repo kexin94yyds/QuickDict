@@ -136,6 +136,114 @@ final class EnrichService {
         task.resume()
     }
 
+    /// 取图回退链：Wikipedia search → Datamuse 语义近邻
+    private func fetchImageViaFallbacks(for word: String, completion: @escaping (String?) -> Void) {
+        fetchImageFallback(for: word) { [weak self] path in
+            if let path { completion(path); return }
+            guard let self else { completion(nil); return }
+            self.fetchImageViaNeighbors(originalWord: word, completion: completion)
+        }
+    }
+
+    /// 通过语义近邻（上位词 / 反向词典）找图：每个邻居跑一次 Wikipedia summary 取缩略图
+    private func fetchImageViaNeighbors(originalWord: String, completion: @escaping (String?) -> Void) {
+        fetchSemanticNeighbors(for: originalWord) { [weak self] neighbors in
+            guard let self, !neighbors.isEmpty else { completion(nil); return }
+            self.tryNeighborsForImage(ArraySlice(neighbors), completion: completion)
+        }
+    }
+
+    private func tryNeighborsForImage(_ neighbors: ArraySlice<String>, completion: @escaping (String?) -> Void) {
+        guard let neighbor = neighbors.first else { completion(nil); return }
+        let rest = neighbors.dropFirst()
+        fetchWikipediaThumbnailURL(forTitle: neighbor) { [weak self] imageURL in
+            guard let self else { completion(nil); return }
+            guard let imageURL else {
+                self.tryNeighborsForImage(rest, completion: completion); return
+            }
+            // 用 neighbor 做缓存 key，方便跨原词共享
+            self.downloadImage(from: imageURL, key: neighbor) { [weak self] path in
+                if let path { completion(path); return }
+                self?.tryNeighborsForImage(rest, completion: completion)
+            }
+        }
+    }
+
+    private func fetchWikipediaThumbnailURL(forTitle title: String, completion: @escaping (URL?) -> Void) {
+        guard let encoded = title.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "https://en.wikipedia.org/api/rest_v1/page/summary/\(encoded)") else {
+            completion(nil); return
+        }
+        var req = URLRequest(url: url)
+        req.setValue("QuickDict-mac/1.0 (https://github.com/local)", forHTTPHeaderField: "User-Agent")
+        let task = session.dataTask(with: req) { data, _, _ in
+            guard let data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let thumb = json["thumbnail"] as? [String: Any],
+                  let s = thumb["source"] as? String,
+                  let u = URL(string: s) else {
+                completion(nil); return
+            }
+            completion(u)
+        }
+        task.resume()
+    }
+
+    /// Datamuse 语义近邻：rel_spc（上位词，更稳）+ ml（means-like / 反向词典）并发查询、合并去重
+    /// 限制最多 3 个，保持网络开销可控
+    private func fetchSemanticNeighbors(for word: String, completion: @escaping ([String]) -> Void) {
+        guard let encoded = word.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              !encoded.isEmpty else {
+            completion([]); return
+        }
+        let endpoints = [
+            "https://api.datamuse.com/words?rel_spc=\(encoded)&max=5",  // hypernym
+            "https://api.datamuse.com/words?ml=\(encoded)&max=5"        // means-like
+        ]
+        let group = DispatchGroup()
+        // 索引对齐结果，保证 spc 优先排序
+        var results: [[String]] = Array(repeating: [], count: endpoints.count)
+        let lock = NSLock()
+        for (i, urlStr) in endpoints.enumerated() {
+            guard let url = URL(string: urlStr) else { continue }
+            var req = URLRequest(url: url)
+            req.setValue("QuickDict-mac/1.0", forHTTPHeaderField: "User-Agent")
+            group.enter()
+            let task = session.dataTask(with: req) { data, _, _ in
+                let words = Self.parseDatamuseWords(data: data)
+                lock.lock(); results[i] = words; lock.unlock()
+                group.leave()
+            }
+            task.resume()
+        }
+        group.notify(queue: .global()) {
+            var seen = Set<String>()
+            seen.insert(word.lowercased())
+            var out: [String] = []
+            for arr in results {
+                for w in arr {
+                    let key = w.lowercased()
+                    // 跳过含空格的多词条目（Wikipedia summary 命中率差）
+                    if key.contains(" ") { continue }
+                    if seen.contains(key) { continue }
+                    seen.insert(key)
+                    out.append(w)
+                    if out.count >= 3 { break }
+                }
+                if out.count >= 3 { break }
+            }
+            completion(out)
+        }
+    }
+
+    private static func parseDatamuseWords(data: Data?) -> [String] {
+        guard let data,
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return []
+        }
+        return arr.compactMap { $0["word"] as? String }
+    }
+
     /// 异步获取 Hacker News 含此词的评论例句（Algolia API，免费）
     func fetchHackerNews(word: String, completion: @escaping ([HNExample]) -> Void) {
         guard let encoded = word.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
