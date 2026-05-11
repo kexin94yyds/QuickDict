@@ -205,28 +205,144 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 选定段里挑一个英文词做查询目标（去标点、过滤纯数字/符号、取最长的英文词）
         let candidate = pickLookupWord(from: normalizedText) ?? normalizedText
-        let context = (candidate == normalizedText) ? nil : normalizedText
+        let baseContext = (candidate == normalizedText) ? nil : normalizedText
+        let chineseResolution = ChineseEnglishResolver.shared.resolve(candidate)
 
-        // 查词：系统词典 → ECDICT
-        let result = DictService.shared.lookup(candidate)
+        let result: LookupResult?
+        let lookupWord: String
+        let chineseDefinition: String?
+        if let chineseResolution {
+            chineseDefinition = DictService.shared.lookup(chineseResolution.original)?.definition
+            var resolvedResult: LookupResult?
+            var resolvedWord = chineseResolution.primary
+            for englishCandidate in chineseResolution.candidates {
+                if let candidateResult = DictService.shared.lookup(englishCandidate) {
+                    resolvedResult = candidateResult
+                    resolvedWord = candidateResult.word
+                    break
+                }
+            }
+            result = resolvedResult
+            lookupWord = resolvedWord
+        } else {
+            chineseDefinition = nil
+            result = DictService.shared.lookup(candidate)
+            lookupWord = result?.word ?? candidate
+        }
+
+        let context = makeLookupContext(
+            normalizedText: normalizedText,
+            candidate: candidate,
+            baseContext: baseContext,
+            chineseResolution: chineseResolution,
+            englishWord: result?.word ?? lookupWord
+        )
 
         // 记录到 history（不自动保存为收藏，用户要保存自己点 ☆）
-        WordBook.shared.recordLookup(word: result?.word ?? candidate, context: context)
+        WordBook.shared.recordLookup(word: result?.word ?? lookupWord, context: context)
 
         if let result {
+            let displayWord = chineseResolution.map { "\($0.original) → \(result.word)" }
+            let definition = chineseResolution.map {
+                mergedChineseEnglishDefinition(
+                    original: $0.original,
+                    candidates: $0.candidates,
+                    chineseDefinition: chineseDefinition,
+                    englishDefinition: result.definition
+                )
+            } ?? result.definition
+            let imageWords = chineseResolution.map {
+                imageCandidateList(primary: result.word, candidates: $0.candidates)
+            } ?? []
+            let source = chineseResolution == nil
+                ? result.source.rawValue
+                : "\(result.source.rawValue) · 中文→英文"
             let panel = HUDPanel(word: result.word,
-                                 definition: result.definition,
-                                 source: result.source.rawValue,
-                                 context: context)
+                                 definition: definition,
+                                 source: source,
+                                 context: context,
+                                 displayWord: displayWord,
+                                 imageWords: imageWords)
             panel.show()
         } else {
+            let displayWord = chineseResolution.map { "\($0.original) → \(lookupWord)" }
+            let definition: String
+            if let chineseResolution {
+                definition = """
+                未找到「\(chineseResolution.original)」对应英文候选的定义
+
+                已尝试候选：\(chineseResolution.candidates.joined(separator: " / "))
+
+                可试试：
+                • 菜单「下载/更新离线词典」获取 ECDICT
+                • 换一个更具体的中文词
+                """
+            } else {
+                definition = """
+                未找到「\(candidate)」的定义
+
+                可试试：
+                • 在系统『词典』 App 里启用「简明英汉字典」
+                • 菜单「下载/更新离线词典」获取 ECDICT (含 77万词条)。
+                """
+            }
             let panel = HUDPanel(
-                word: candidate,
-                definition: "未找到「\(candidate)」的定义\n\n可试试：\n• 在系统『词典』 App 里启用「简明英汉字典」\n• 菜单「下载/更新离线词典」获取 ECDICT (含 77万词条)。",
-                context: context
+                word: lookupWord,
+                definition: definition,
+                context: context,
+                displayWord: displayWord,
+                imageWords: chineseResolution?.candidates ?? []
             )
             panel.show()
         }
+    }
+
+    private func makeLookupContext(
+        normalizedText: String,
+        candidate: String,
+        baseContext: String?,
+        chineseResolution: ChineseEnglishResolution?,
+        englishWord: String
+    ) -> String? {
+        guard let chineseResolution else { return baseContext }
+        var lines = [
+            "中文原词：\(chineseResolution.original)",
+            "英文主词：\(englishWord)"
+        ]
+        if chineseResolution.candidates.count > 1 {
+            lines.append("英文候选：\(chineseResolution.candidates.joined(separator: " / "))")
+        }
+        if normalizedText != candidate {
+            lines.append("原始选区：\(normalizedText)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func mergedChineseEnglishDefinition(
+        original: String,
+        candidates: [String],
+        chineseDefinition: String?,
+        englishDefinition: String
+    ) -> String {
+        var sections: [String] = []
+        if let chineseDefinition, !chineseDefinition.isEmpty {
+            sections.append("【中文原词】\n\(original)\n\n\(chineseDefinition)")
+        } else {
+            sections.append("【中文原词】\n\(original)")
+        }
+        sections.append("【英文主词】\n\(englishDefinition)")
+        if candidates.count > 1 {
+            sections.append("【英文候选】\n\(candidates.joined(separator: " / "))")
+        }
+        return sections.joined(separator: "\n\n")
+    }
+
+    private func imageCandidateList(primary: String, candidates: [String]) -> [String] {
+        var out: [String] = [primary]
+        for candidate in candidates where !out.contains(where: { $0.caseInsensitiveCompare(candidate) == .orderedSame }) {
+            out.append(candidate)
+        }
+        return out
     }
 
     /// 从一段选定文本里挑出最适合查询的英文单词
