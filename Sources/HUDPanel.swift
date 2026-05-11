@@ -5,6 +5,8 @@ class HUDPanel: NSPanel {
     private let definition: String
     private let source: String?
     private let context: String?
+    private let displayWord: String
+    private let imageWords: [String]
 
     private var globalClickMonitor: Any?
     private var localKeyMonitor: Any?
@@ -19,11 +21,20 @@ class HUDPanel: NSPanel {
     private var wikiSection = NSAttributedString()
     private var hnSection = NSAttributedString()
 
-    init(word: String, definition: String, source: String? = nil, context: String? = nil) {
+    init(
+        word: String,
+        definition: String,
+        source: String? = nil,
+        context: String? = nil,
+        displayWord: String? = nil,
+        imageWords: [String] = []
+    ) {
         self.word = word
         self.definition = definition
         self.source = source
         self.context = context
+        self.displayWord = displayWord ?? word
+        self.imageWords = imageWords
 
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
         let panelWidth: CGFloat = 540
@@ -66,7 +77,7 @@ class HUDPanel: NSPanel {
         defSection = SectionUtil.section(
             header: "📖 释义" + (source.map { "  ·  \($0)" } ?? ""),
             body: DefinitionFormatter.attributedString(
-                word: word, definition: definition, includeTitle: true,
+                word: self.displayWord, definition: definition, includeTitle: true,
                 titleSize: 22, bodySize: 13),
             topGap: false)
 
@@ -211,7 +222,7 @@ class HUDPanel: NSPanel {
     }
 
     private func loadEnrichmentsAsync() {
-        EnrichService.shared.fetchWikipedia(word: word) { [weak self] extract, pageURL, imgPath in
+        EnrichService.shared.fetchWikipedia(word: word, imageFallbackWords: imageWords) { [weak self] extract, pageURL, imgPath in
             guard let self else { return }
             if let imgPath, let img = NSImage(contentsOfFile: imgPath) {
                 self.headerImageView.image = img

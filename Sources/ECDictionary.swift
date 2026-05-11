@@ -49,6 +49,7 @@ final class ECDictionary {
 
     /// 是否已经准备好（数据库已下载并打开）
     private(set) var isReady: Bool = false
+    private var tableName: String?
 
     /// 默认下载源（精简版 stardict.7z 已经过大；优先使用 ecdict-sqlite-28 release）
     /// release 页：https://github.com/skywind3000/ECDICT/releases
@@ -63,27 +64,41 @@ final class ECDictionary {
     /// 打开词典文件（已存在时调用）
     func openIfPossible() {
         queue.sync {
-            guard FileManager.default.fileExists(atPath: dbURL.path) else { return }
+            guard FileManager.default.fileExists(atPath: dbURL.path),
+                  let attrs = try? FileManager.default.attributesOfItem(atPath: dbURL.path),
+                  let size = attrs[.size] as? NSNumber,
+                  size.intValue > 0 else {
+                isReady = false
+                tableName = nil
+                return
+            }
             if sqlite3_open_v2(dbURL.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK {
-                isReady = true
-                NSLog("ECDICT 词典已加载: \(dbURL.path)")
+                tableName = detectTableName()
+                isReady = tableName != nil
+                if isReady {
+                    NSLog("ECDICT 词典已加载: \(dbURL.path)")
+                } else {
+                    NSLog("ECDICT 打开失败: 未找到 stardict/ecdict 表")
+                    sqlite3_close(db)
+                    db = nil
+                }
             } else {
                 NSLog("ECDICT 打开失败: \(String(cString: sqlite3_errmsg(db)))")
                 isReady = false
+                tableName = nil
             }
         }
     }
 
     /// 主表名（ECDICT release 中通常为 stardict）
-    private lazy var tableName: String = {
-        // 尝试常见表名
+    private func detectTableName() -> String? {
         for name in ["stardict", "ecdict"] {
             if tableExists(name) {
                 return name
             }
         }
-        return "stardict"
-    }()
+        return nil
+    }
 
     private func tableExists(_ name: String) -> Bool {
         guard let db else { return false }
@@ -114,7 +129,7 @@ final class ECDictionary {
 
     private func queryExact(_ word: String) -> ECDictEntry? {
         queue.sync {
-            guard let db else { return nil }
+            guard let db, let tableName else { return nil }
             let sql = "SELECT word, phonetic, definition, translation, pos, collins, oxford, tag, bnc, frq, exchange, detail, audio FROM \(tableName) WHERE word = ? COLLATE NOCASE LIMIT 1"
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
@@ -149,6 +164,80 @@ final class ECDictionary {
                 audio: textCol(12)
             )
         }
+    }
+
+    /// 通过中文释义反查英文候选。用于中文查词时先映射到英文主词。
+    func lookupByChinese(_ chinese: String, limit: Int = 8) -> [ECDictEntry] {
+        let query = chinese.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return [] }
+
+        return queue.sync {
+            guard let db, let tableName else { return [] }
+            let like = "%\(query)%"
+            let prefix = "\(query)%"
+            let sql = """
+                SELECT word, phonetic, definition, translation, pos, collins, oxford, tag, bnc, frq, exchange, detail, audio
+                FROM \(tableName)
+                WHERE translation LIKE ?
+                ORDER BY
+                    CASE
+                        WHEN translation = ? THEN 0
+                        WHEN translation LIKE ? THEN 1
+                        ELSE 2
+                    END,
+                    CASE WHEN frq IS NULL OR frq <= 0 THEN 999999 ELSE frq END ASC,
+                    CASE WHEN collins IS NULL OR collins <= 0 THEN 1 ELSE 0 END,
+                    length(word) ASC
+                LIMIT ?
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, like, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, query, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 3, prefix, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int(stmt, 4, Int32(limit))
+
+            var out: [ECDictEntry] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let entry = Self.readEntry(stmt: stmt) {
+                    out.append(entry)
+                }
+            }
+            return out
+        }
+    }
+
+    private static func readEntry(stmt: OpaquePointer?) -> ECDictEntry? {
+        guard let stmt else { return nil }
+
+        func textCol(_ i: Int32) -> String? {
+            if sqlite3_column_type(stmt, i) == SQLITE_NULL { return nil }
+            guard let p = sqlite3_column_text(stmt, i) else { return nil }
+            let s = String(cString: p)
+            return s.isEmpty ? nil : s
+        }
+        func intCol(_ i: Int32) -> Int? {
+            if sqlite3_column_type(stmt, i) == SQLITE_NULL { return nil }
+            return Int(sqlite3_column_int(stmt, i))
+        }
+
+        guard let word = textCol(0) else { return nil }
+        return ECDictEntry(
+            word: word,
+            phonetic: textCol(1),
+            definition: textCol(2),
+            translation: textCol(3),
+            pos: textCol(4),
+            collins: intCol(5),
+            oxford: intCol(6),
+            tag: textCol(7),
+            bnc: intCol(8),
+            frq: intCol(9),
+            exchange: textCol(10),
+            detail: textCol(11),
+            audio: textCol(12)
+        )
     }
 
     /// 把 ECDICT 词条格式化为人类可读字符串（参考系统词典风格）

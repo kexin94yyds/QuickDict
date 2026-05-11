@@ -48,7 +48,7 @@ final class EnrichService {
     }
 
     /// 异步获取 Wikipedia 摘要+图片
-    func fetchWikipedia(word: String, completion: @escaping (String?, URL?, String?) -> Void) {
+    func fetchWikipedia(word: String, imageFallbackWords: [String] = [], completion: @escaping (String?, URL?, String?) -> Void) {
         // REST API: https://en.wikipedia.org/api/rest_v1/page/summary/{title}
         guard let encoded = word.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
               let url = URL(string: "https://en.wikipedia.org/api/rest_v1/page/summary/\(encoded)") else {
@@ -89,7 +89,7 @@ final class EnrichService {
                 return
             }
             // 主接口没有图（消歧义/抽象词），回退到搜索接口 + 语义近邻
-            self.fetchImageViaFallbacks(for: word) { fallbackPath in
+            self.fetchImageViaFallbacks(for: word, extraWords: imageFallbackWords) { fallbackPath in
                 DispatchQueue.main.async { completion(extract, pageURL, fallbackPath) }
             }
         }
@@ -137,11 +137,42 @@ final class EnrichService {
     }
 
     /// 取图回退链：Wikipedia search → Datamuse 语义近邻
-    private func fetchImageViaFallbacks(for word: String, completion: @escaping (String?) -> Void) {
+    private func fetchImageViaFallbacks(for word: String, extraWords: [String] = [], completion: @escaping (String?) -> Void) {
         fetchImageFallback(for: word) { [weak self] path in
             if let path { completion(path); return }
             guard let self else { completion(nil); return }
-            self.fetchImageViaNeighbors(originalWord: word, completion: completion)
+            self.fetchImageViaNeighbors(originalWord: word) { [weak self] neighborPath in
+                if let neighborPath { completion(neighborPath); return }
+                self?.fetchImageViaExtraWords(extraWords, excluding: word, completion: completion)
+            }
+        }
+    }
+
+    private func fetchImageViaExtraWords(_ words: [String], excluding original: String, completion: @escaping (String?) -> Void) {
+        var seen = Set([original.lowercased()])
+        let unique = words
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .filter { seen.insert($0.lowercased()).inserted }
+        tryExtraImageWords(ArraySlice(unique), completion: completion)
+    }
+
+    private func tryExtraImageWords(_ words: ArraySlice<String>, completion: @escaping (String?) -> Void) {
+        guard let word = words.first else { completion(nil); return }
+        let rest = words.dropFirst()
+        fetchImageFallback(for: word) { [weak self] path in
+            if let path { completion(path); return }
+            self?.fetchWikipediaThumbnailURL(forTitle: word) { [weak self] imageURL in
+                guard let self else { completion(nil); return }
+                guard let imageURL else {
+                    self.tryExtraImageWords(rest, completion: completion)
+                    return
+                }
+                self.downloadImage(from: imageURL, key: word) { [weak self] localPath in
+                    if let localPath { completion(localPath); return }
+                    self?.tryExtraImageWords(rest, completion: completion)
+                }
+            }
         }
     }
 
