@@ -175,6 +175,28 @@ class HUDPanel: NSPanel {
         ])
 
         self.contentView = visualEffect
+        updateFavoriteButtonState()
+    }
+
+    private func favoriteSentence() -> String {
+        let base: String
+        if let ctx = context, !ctx.isEmpty {
+            base = ctx
+        } else {
+            base = definition.split(separator: "\n").first.map(String.init) ?? definition
+        }
+        return String(base.trimmingCharacters(in: .whitespacesAndNewlines).prefix(400))
+    }
+
+    private func updateFavoriteButtonState() {
+        guard let button = favoriteButton else { return }
+        if WordBook.shared.hasFavorite(word: word, sentence: favoriteSentence()) {
+            button.title = "★ 已收藏"
+            button.isEnabled = false
+        } else {
+            button.title = "☆ 收藏"
+            button.isEnabled = true
+        }
     }
 
     private func renderAll() {
@@ -259,16 +281,8 @@ class HUDPanel: NSPanel {
     }
 
     @objc private func addToFavorites() {
-        // 优先用选区原句作为 sentence；没有才起用释义首行
-        let sentence: String = {
-            if let ctx = context, !ctx.isEmpty {
-                return ctx
-            }
-            return definition.split(separator: "\n").first.map(String.init) ?? definition
-        }()
-        _ = WordBook.shared.addFavorite(word: word, sentence: String(sentence.prefix(400)))
-        favoriteButton?.title = "★ 已收藏"
-        favoriteButton?.isEnabled = false
+        _ = WordBook.shared.addFavorite(word: word, sentence: favoriteSentence())
+        updateFavoriteButtonState()
     }
 
     deinit {

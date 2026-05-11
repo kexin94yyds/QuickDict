@@ -8,45 +8,32 @@ enum RecallQuality: Int {
     case easy = 5       // 简单
 }
 
-/// SM-2 间隔重复算法（Anki 的祖先）
-/// 参考: https://en.wikipedia.org/wiki/SuperMemo#Description_of_SM-2_algorithm
+/// 固定艾宾浩斯间隔（更密版）
+/// 规则：1 / 2 / 3 / 5 / 8 / 14 / 30 天
 enum ReviewScheduler {
+    private static let intervals = [1, 2, 3, 5, 8, 14, 30]
 
-    /// 根据当前 entry 状态和用户评分，返回更新后的 (ease, intervalDays, dueAt, lastReview, reviewCount)
+    /// 根据当前 entry 状态和用户评分，返回更新后的间隔与下次到期时间
     static func schedule(entry: FavoriteEntry, quality: RecallQuality, now: Date = Date()) -> FavoriteEntry {
-        let q = Double(quality.rawValue)
-
-        // 1. 计算新的 ease（不低于 1.3）
-        var newEase = entry.ease + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))
-        if newEase < 1.3 { newEase = 1.3 }
-
-        // 2. 计算新间隔
-        var newInterval: Int
-        var newReviewCount = entry.reviewCount
-        if quality == .forgot {
-            // 失败：重置到 1 天后再来
-            newInterval = 1
-            newReviewCount = 0
-        } else {
-            switch entry.reviewCount {
-            case 0:
-                newInterval = 1
-            case 1:
-                newInterval = 6
-            default:
-                newInterval = max(1, Int((Double(entry.intervalDays) * newEase).rounded()))
-            }
-            newReviewCount += 1
+        let currentStep = max(0, min(entry.reviewCount, Self.intervals.count - 1))
+        let nextStep: Int
+        switch quality {
+        case .forgot:
+            nextStep = 0
+        case .hard:
+            nextStep = currentStep
+        case .good:
+            nextStep = min(currentStep + 1, Self.intervals.count - 1)
+        case .easy:
+            nextStep = min(currentStep + 2, Self.intervals.count - 1)
         }
-
-        // 3. 下次到期时间
+        let newInterval = Self.intervals[nextStep]
         let dueAt = Calendar.current.date(byAdding: .day, value: newInterval, to: now) ?? now.addingTimeInterval(Double(newInterval) * 86400)
 
         var updated = entry
-        updated.ease = newEase
         updated.intervalDays = newInterval
         updated.dueAt = dueAt
-        updated.reviewCount = newReviewCount
+        updated.reviewCount = nextStep
         updated.lastReview = now
         return updated
     }

@@ -259,7 +259,7 @@ class WordBookPanel: NSPanel {
         guard !due.isEmpty else {
             let alert = NSAlert()
             alert.messageText = "暂无到期复习的单词"
-            alert.informativeText = "现在还没有到期的复习。先收藏一些单词，复习会按 SM-2 间隔自动安排。"
+            alert.informativeText = "现在还没有到期的复习。先收藏一些单词，复习会按固定间隔自动安排。"
             alert.runModal()
             return
         }

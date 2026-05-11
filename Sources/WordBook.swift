@@ -38,8 +38,32 @@ final class WordBook {
 
     // MARK: - 收藏（句子 / 标记重要词）
 
+    private func normalizeFavoriteWord(_ word: String) -> String {
+        word.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func normalizeFavoriteSentence(_ sentence: String) -> String {
+        String(sentence.trimmingCharacters(in: .whitespacesAndNewlines).prefix(400))
+    }
+
+    func existingFavorite(word: String, sentence: String) -> FavoriteEntry? {
+        let normalizedWord = normalizeFavoriteWord(word)
+        let normalizedSentence = normalizeFavoriteSentence(sentence)
+        return Database.shared.getFavorite(word: normalizedWord, sentence: normalizedSentence)
+    }
+
+    func hasFavorite(word: String, sentence: String) -> Bool {
+        existingFavorite(word: word, sentence: sentence) != nil
+    }
+
     func addFavorite(word: String, sentence: String, tags: String? = nil) -> FavoriteEntry {
-        let entry = FavoriteEntry.newFavorite(word: word, sentence: sentence, tags: tags)
+        let normalizedWord = normalizeFavoriteWord(word)
+        let normalizedSentence = normalizeFavoriteSentence(sentence)
+        if let existing = Database.shared.getFavorite(word: normalizedWord, sentence: normalizedSentence) {
+            return existing
+        }
+
+        let entry = FavoriteEntry.newFavorite(word: normalizedWord, sentence: normalizedSentence, tags: tags)
         Database.shared.addFavorite(entry)
         return entry
     }

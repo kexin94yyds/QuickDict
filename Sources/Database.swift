@@ -248,6 +248,24 @@ final class Database {
         }
     }
 
+    func getFavorite(word: String, sentence: String) -> FavoriteEntry? {
+        queue.sync {
+            let sql = """
+                SELECT id, word, sentence, added_at, ease, interval_days, due_at, review_count, last_review, tags
+                FROM favorites
+                WHERE word = ? AND sentence = ?
+                LIMIT 1
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, word, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, sentence, -1, SQLITE_TRANSIENT)
+            guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+            return readFavoriteRow(stmt: stmt)
+        }
+    }
+
     func getAllFavorites(search: String? = nil) -> [FavoriteEntry] {
         queue.sync {
             var sql = "SELECT id, word, sentence, added_at, ease, interval_days, due_at, review_count, last_review, tags FROM favorites"
@@ -306,31 +324,47 @@ final class Database {
         }
     }
 
+    private func readFavoriteRow(stmt: OpaquePointer?) -> FavoriteEntry? {
+        guard let stmt else { return nil }
+
+        guard
+            let idPtr = sqlite3_column_text(stmt, 0),
+            let wordPtr = sqlite3_column_text(stmt, 1),
+            let sentencePtr = sqlite3_column_text(stmt, 2)
+        else { return nil }
+
+        let idStr = String(cString: idPtr)
+        guard let id = UUID(uuidString: idStr) else { return nil }
+
+        let word = String(cString: wordPtr)
+        let sentence = String(cString: sentencePtr)
+        let addedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 3))
+        let ease = sqlite3_column_double(stmt, 4)
+        let intervalDays = Int(sqlite3_column_int(stmt, 5))
+        let dueAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 6))
+        let reviewCount = Int(sqlite3_column_int(stmt, 7))
+        let lastReview: Date? = {
+            if sqlite3_column_type(stmt, 8) == SQLITE_NULL { return nil }
+            return Date(timeIntervalSince1970: sqlite3_column_double(stmt, 8))
+        }()
+        let tags: String? = {
+            if let p = sqlite3_column_text(stmt, 9) { return String(cString: p) }
+            return nil
+        }()
+
+        return FavoriteEntry(
+            id: id, word: word, sentence: sentence, addedAt: addedAt,
+            ease: ease, intervalDays: intervalDays, dueAt: dueAt,
+            reviewCount: reviewCount, lastReview: lastReview, tags: tags
+        )
+    }
+
     private func readFavorites(stmt: OpaquePointer?) -> [FavoriteEntry] {
         var out: [FavoriteEntry] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
-            let idStr = String(cString: sqlite3_column_text(stmt, 0))
-            guard let id = UUID(uuidString: idStr) else { continue }
-            let word = String(cString: sqlite3_column_text(stmt, 1))
-            let sentence = String(cString: sqlite3_column_text(stmt, 2))
-            let addedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 3))
-            let ease = sqlite3_column_double(stmt, 4)
-            let intervalDays = Int(sqlite3_column_int(stmt, 5))
-            let dueAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 6))
-            let reviewCount = Int(sqlite3_column_int(stmt, 7))
-            let lastReview: Date? = {
-                if sqlite3_column_type(stmt, 8) == SQLITE_NULL { return nil }
-                return Date(timeIntervalSince1970: sqlite3_column_double(stmt, 8))
-            }()
-            let tags: String? = {
-                if let p = sqlite3_column_text(stmt, 9) { return String(cString: p) }
-                return nil
-            }()
-            out.append(FavoriteEntry(
-                id: id, word: word, sentence: sentence, addedAt: addedAt,
-                ease: ease, intervalDays: intervalDays, dueAt: dueAt,
-                reviewCount: reviewCount, lastReview: lastReview, tags: tags
-            ))
+            if let entry = readFavoriteRow(stmt: stmt) {
+                out.append(entry)
+            }
         }
         return out
     }
@@ -413,10 +447,10 @@ struct FavoriteEntry {
     let word: String
     let sentence: String
     let addedAt: Date
-    var ease: Double           // SM-2 ease factor，初始 2.5
-    var intervalDays: Int      // 当前间隔（天），首次为 0
+    var ease: Double           // 历史兼容字段，保留旧数据
+    var intervalDays: Int      // 当前间隔（天）
     var dueAt: Date            // 下次复习时间
-    var reviewCount: Int
+    var reviewCount: Int       // 当前复习阶段
     var lastReview: Date?
     var tags: String?
 
