@@ -46,6 +46,8 @@ final class ChineseEnglishResolver {
         "问题": ["problem", "issue"],
         "目标": ["goal", "target"],
         "方法": ["method", "approach"],
+        "重启": ["restart", "reboot"],
+        "重新启动": ["restart", "reboot"],
         "苹果": ["apple"],
         "河流": ["river"],
         "森林": ["forest"],
@@ -55,7 +57,7 @@ final class ChineseEnglishResolver {
 
     private init() {}
 
-    func resolve(_ raw: String) -> ChineseEnglishResolution? {
+    func resolve(_ raw: String, appleDefinition: String? = nil) -> ChineseEnglishResolution? {
         let original = normalize(raw)
         guard containsCJK(original) else { return nil }
 
@@ -67,6 +69,7 @@ final class ChineseEnglishResolver {
             .max(by: { $0.count < $1.count }) {
             append(&candidates, builtInCandidates[contained] ?? [])
         }
+        append(&candidates, englishCandidates(fromAppleDefinition: appleDefinition))
         append(&candidates, ECDictionary.shared.lookupByChinese(original, limit: 8).map(\.word))
 
         let filtered = candidates
@@ -102,6 +105,28 @@ final class ChineseEnglishResolver {
 
     private static func isUsefulEnglishCandidate(_ word: String) -> Bool {
         guard word.count >= 2, word.count <= 32 else { return false }
+        let lower = word.lowercased()
+        let stopWords: Set<String> = [
+            "verb", "noun", "adjective", "adverb", "transitive verb", "intransitive verb",
+            "plural noun", "countable noun", "uncountable noun", "preposition", "pronoun",
+            "article", "auxiliary verb", "modal verb", "interjection", "conjunction"
+        ]
+        guard !stopWords.contains(lower) else { return false }
+        guard lower.split(separator: " ").count <= 4 else { return false }
         return word.range(of: #"^[a-z][a-z '\-]*$"#, options: .regularExpression) != nil
+    }
+
+    private func englishCandidates(fromAppleDefinition definition: String?) -> [String] {
+        guard let definition, !definition.isEmpty else { return [] }
+        let pattern = #"[A-Za-z][A-Za-z' -]{1,48}"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let ns = definition as NSString
+        let matches = regex.matches(in: definition, range: NSRange(location: 0, length: ns.length))
+        return matches.map { match in
+            ns.substring(with: match.range)
+                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+                .lowercased()
+        }
     }
 }

@@ -206,13 +206,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 选定段里挑一个英文词做查询目标（去标点、过滤纯数字/符号、取最长的英文词）
         let candidate = pickLookupWord(from: normalizedText) ?? normalizedText
         let baseContext = (candidate == normalizedText) ? nil : normalizedText
-        let chineseResolution = ChineseEnglishResolver.shared.resolve(candidate)
+        let possibleChineseDefinition = ChineseEnglishResolver.shared.containsCJK(candidate)
+            ? DictService.shared.lookup(candidate)?.definition
+            : nil
+        let chineseResolution = ChineseEnglishResolver.shared.resolve(candidate, appleDefinition: possibleChineseDefinition)
 
         let result: LookupResult?
         let lookupWord: String
         let chineseDefinition: String?
         if let chineseResolution {
-            chineseDefinition = DictService.shared.lookup(chineseResolution.original)?.definition
+            chineseDefinition = possibleChineseDefinition
             var resolvedResult: LookupResult?
             var resolvedWord = chineseResolution.primary
             for englishCandidate in chineseResolution.candidates {
