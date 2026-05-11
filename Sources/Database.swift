@@ -456,14 +456,15 @@ struct FavoriteEntry {
 
     static func newFavorite(word: String, sentence: String, tags: String? = nil) -> FavoriteEntry {
         let now = Date()
+        let firstDueAt = Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now.addingTimeInterval(86400)
         return FavoriteEntry(
             id: UUID(),
             word: word,
             sentence: sentence,
             addedAt: now,
             ease: 2.5,
-            intervalDays: 0,
-            dueAt: now, // 立即可复习
+            intervalDays: 1,
+            dueAt: firstDueAt, // 首次复习从明天开始
             reviewCount: 0,
             lastReview: nil,
             tags: tags
