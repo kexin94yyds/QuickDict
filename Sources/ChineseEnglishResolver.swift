@@ -3,9 +3,16 @@ import Foundation
 struct ChineseEnglishResolution {
     let original: String
     let candidates: [String]
+    let imageTerms: [String]
 
     var primary: String {
         candidates.first ?? original
+    }
+
+    init(original: String, candidates: [String], imageTerms: [String] = []) {
+        self.original = original
+        self.candidates = candidates
+        self.imageTerms = imageTerms
     }
 }
 
@@ -85,7 +92,7 @@ final class ChineseEnglishResolver {
         let singleWords = filtered.filter { !$0.contains(" ") }
         let phrases = filtered.filter { $0.contains(" ") }
         let ordered = singleWords.isEmpty ? filtered : singleWords + phrases
-        return ChineseEnglishResolution(original: original, candidates: ordered)
+        return ChineseEnglishResolution(original: original, candidates: ordered, imageTerms: ordered)
     }
 
     func containsCJK(_ text: String) -> Bool {

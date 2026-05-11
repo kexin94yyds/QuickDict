@@ -272,6 +272,15 @@ class HUDPanel: NSPanel {
 
     private func setupAutoClose() {
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if modifiers.contains(.command),
+               !modifiers.contains(.shift),
+               !modifiers.contains(.option),
+               !modifiers.contains(.control),
+               event.charactersIgnoringModifiers?.lowercased() == "b" {
+                self?.addToFavorites()
+                return nil
+            }
             if event.keyCode == 53 {
                 self?.closePanel()
                 return nil

@@ -77,6 +77,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "下载/更新离线词典 (ECDICT)", action: #selector(downloadECDICT), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "从本地文件导入词典…", action: #selector(importECDICT), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "设置 Gemini API Key…", action: #selector(setGeminiAPIKey), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "清除 Gemini API Key", action: #selector(clearGeminiAPIKey), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
@@ -209,7 +211,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let possibleChineseDefinition = ChineseEnglishResolver.shared.containsCJK(candidate)
             ? DictService.shared.lookup(candidate)?.definition
             : nil
-        let chineseResolution = ChineseEnglishResolver.shared.resolve(candidate, appleDefinition: possibleChineseDefinition)
+        var chineseResolution = ChineseEnglishResolver.shared.resolve(candidate, appleDefinition: possibleChineseDefinition)
+        if chineseResolution == nil, ChineseEnglishResolver.shared.containsCJK(candidate) {
+            chineseResolution = GeminiEnglishResolver.shared.resolveSync(candidate)
+        }
 
         let result: LookupResult?
         let lookupWord: String
@@ -255,7 +260,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             } ?? result.definition
             let imageWords = chineseResolution.map {
-                imageCandidateList(primary: result.word, candidates: $0.candidates)
+                imageCandidateList(primary: result.word, candidates: $0.imageTerms + $0.candidates)
             } ?? []
             let source = chineseResolution == nil
                 ? result.source.rawValue
@@ -294,7 +299,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 definition: definition,
                 context: context,
                 displayWord: displayWord,
-                imageWords: chineseResolution?.candidates ?? []
+                imageWords: chineseResolution.map { $0.imageTerms + $0.candidates } ?? []
             )
             panel.show()
         }
@@ -475,6 +480,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 a.runModal()
             }
         }
+    }
+
+    @objc func setGeminiAPIKey() {
+        let alert = NSAlert()
+        alert.messageText = "设置 Gemini API Key"
+        alert.informativeText = "API Key 会保存到 macOS Keychain，不会写入源码或数据库。中文离线词典无法解析时，QuickDict 才会调用 Gemini fallback。"
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "取消")
+
+        let input = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
+        input.placeholderString = "AIza..."
+        alert.accessoryView = input
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let key = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let done = NSAlert()
+        if GeminiAPIKeyStore.save(key) {
+            done.messageText = "Gemini API Key 已保存 ✅"
+            done.informativeText = "之后中文词在本地映射和 ECDICT 都失败时，会自动尝试 Gemini。"
+        } else {
+            done.messageText = "保存失败"
+            done.informativeText = "Key 为空或 Keychain 写入失败。"
+        }
+        done.runModal()
+    }
+
+    @objc func clearGeminiAPIKey() {
+        let done = NSAlert()
+        if GeminiAPIKeyStore.delete() {
+            done.messageText = "Gemini API Key 已清除"
+        } else {
+            done.messageText = "没有可清除的 Gemini API Key"
+        }
+        done.runModal()
     }
 
     /// 每日首次启动复习提醒
