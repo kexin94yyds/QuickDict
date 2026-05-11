@@ -82,7 +82,10 @@ final class ChineseEnglishResolver {
             }
 
         guard !filtered.isEmpty else { return nil }
-        return ChineseEnglishResolution(original: original, candidates: filtered)
+        let singleWords = filtered.filter { !$0.contains(" ") }
+        let phrases = filtered.filter { $0.contains(" ") }
+        let ordered = singleWords.isEmpty ? filtered : singleWords + phrases
+        return ChineseEnglishResolution(original: original, candidates: ordered)
     }
 
     func containsCJK(_ text: String) -> Bool {
