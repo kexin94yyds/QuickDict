@@ -88,8 +88,8 @@ final class EnrichService {
                 }
                 return
             }
-            // 主接口没有图（消歧义/抽象词），回退到搜索接口找一张
-            self.fetchImageFallback(for: word) { fallbackPath in
+            // 主接口没有图（消歧义/抽象词），回退到搜索接口 + 语义近邻
+            self.fetchImageViaFallbacks(for: word) { fallbackPath in
                 DispatchQueue.main.async { completion(extract, pageURL, fallbackPath) }
             }
         }
