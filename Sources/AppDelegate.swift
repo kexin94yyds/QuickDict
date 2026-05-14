@@ -19,6 +19,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         NSApp.setActivationPolicy(.accessory)
+        ProcessInfo.processInfo.disableAutomaticTermination("QuickDict keeps review reminders scheduled")
         
         // 检查辅助功能权限
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
