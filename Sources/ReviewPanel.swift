@@ -4,6 +4,9 @@ import Cocoa
 final class ReviewPanel: NSPanel {
     private var queue: [FavoriteEntry]
     private var index: Int = 0
+    private let onFinish: (() -> Void)?
+    private let onCancel: (() -> Void)?
+    private var completed = false
 
     private var headerImageView: NSImageView!
     private var wordLabel: NSTextField!
@@ -16,6 +19,8 @@ final class ReviewPanel: NSPanel {
 
     private var ratingStack: NSStackView!
     private var progressLabel: NSTextField!
+    private var sentenceFullWidthConstraint: NSLayoutConstraint!
+    private var sentenceImageAvoidanceConstraint: NSLayoutConstraint!
 
     private var defRevealed = false
 
@@ -25,8 +30,10 @@ final class ReviewPanel: NSPanel {
     private var wikiSection = NSAttributedString()
     private var hnSection = NSAttributedString()
 
-    init(entries: [FavoriteEntry]) {
+    init(entries: [FavoriteEntry], onFinish: (() -> Void)? = nil, onCancel: (() -> Void)? = nil) {
         self.queue = entries
+        self.onFinish = onFinish
+        self.onCancel = onCancel
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
         let w: CGFloat = 700
         let h: CGFloat = 640
@@ -78,7 +85,7 @@ final class ReviewPanel: NSPanel {
 
         sentenceLabel = NSTextField(wrappingLabelWithString: "")
         sentenceLabel.font = .systemFont(ofSize: 14, weight: .medium)
-        sentenceLabel.maximumNumberOfLines = 4
+        sentenceLabel.maximumNumberOfLines = 8
         sentenceLabel.textColor = .labelColor
         sentenceLabel.translatesAutoresizingMaskIntoConstraints = false
         sentenceLabel.drawsBackground = true
@@ -145,6 +152,10 @@ final class ReviewPanel: NSPanel {
         container.addSubview(contentScroll)
         container.addSubview(ratingStack)
 
+        sentenceFullWidthConstraint = sentenceLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16)
+        sentenceImageAvoidanceConstraint = sentenceLabel.trailingAnchor.constraint(equalTo: headerImageView.leadingAnchor, constant: -12)
+        sentenceImageAvoidanceConstraint.isActive = false
+
         NSLayoutConstraint.activate([
             progressLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
             progressLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
@@ -164,7 +175,7 @@ final class ReviewPanel: NSPanel {
 
             sentenceLabel.topAnchor.constraint(equalTo: phoneticLabel.bottomAnchor, constant: 12),
             sentenceLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
-            sentenceLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            sentenceFullWidthConstraint,
 
             revealButton.topAnchor.constraint(equalTo: sentenceLabel.bottomAnchor, constant: 14),
             revealButton.centerXAnchor.constraint(equalTo: container.centerXAnchor),
@@ -185,6 +196,13 @@ final class ReviewPanel: NSPanel {
 
     // MARK: - 状态
 
+    private func setHeaderImageVisible(_ visible: Bool) {
+        headerImageView.isHidden = !visible
+        sentenceFullWidthConstraint.isActive = !visible
+        sentenceImageAvoidanceConstraint.isActive = visible
+        contentView?.layoutSubtreeIfNeeded()
+    }
+
     private func loadCurrent() {
         if index >= queue.count { finish(); return }
         let entry = queue[index]
@@ -196,8 +214,8 @@ final class ReviewPanel: NSPanel {
         contentScroll.isHidden = true
         ratingStack.isHidden = true
         revealButton.isHidden = false
-        headerImageView.isHidden = true
         headerImageView.image = nil
+        setHeaderImageVisible(false)
         defSection = NSAttributedString()
         ownSection = NSAttributedString()
         wikiSection = NSAttributedString()
@@ -253,7 +271,7 @@ final class ReviewPanel: NSPanel {
             guard self.index < self.queue.count, self.queue[self.index].id == entry.id else { return }
             if let imgPath, let img = NSImage(contentsOfFile: imgPath) {
                 self.headerImageView.image = img
-                self.headerImageView.isHidden = false
+                self.setHeaderImageVisible(true)
             }
             if let extract, !extract.isEmpty {
                 let body = NSMutableAttributedString()
@@ -328,7 +346,16 @@ final class ReviewPanel: NSPanel {
         alert.informativeText = "今天的复习已经全部完成，共 \(queue.count) 个单词。"
         alert.addButton(withTitle: "好")
         alert.runModal()
+        completed = true
+        onFinish?()
         self.close()
+    }
+
+    override func close() {
+        if !completed {
+            onCancel?()
+        }
+        super.close()
     }
 
     override func keyDown(with event: NSEvent) {

@@ -68,6 +68,8 @@ final class Database {
         """)
         exec("CREATE INDEX IF NOT EXISTS idx_favorites_due ON favorites(due_at);")
         exec("CREATE INDEX IF NOT EXISTS idx_favorites_word ON favorites(word);")
+        dedupeFavoriteRows()
+        exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_favorites_word_sentence_unique ON favorites(word COLLATE NOCASE, sentence);")
 
         exec("""
             CREATE TABLE IF NOT EXISTS dict_cache (
@@ -90,6 +92,29 @@ final class Database {
             return false
         }
         return true
+    }
+
+    private func dedupeFavoriteRows() {
+        exec("""
+            DELETE FROM favorites
+            WHERE id IN (
+                SELECT id FROM (
+                    SELECT
+                        id,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY lower(word), sentence
+                            ORDER BY
+                                review_count DESC,
+                                interval_days DESC,
+                                due_at ASC,
+                                COALESCE(last_review, 0) DESC,
+                                added_at ASC
+                        ) AS row_num
+                    FROM favorites
+                )
+                WHERE row_num > 1
+            );
+        """)
     }
 
     // MARK: - History
@@ -189,7 +214,7 @@ final class Database {
     func addFavorite(_ entry: FavoriteEntry) {
         queue.sync {
             let sql = """
-                INSERT OR REPLACE INTO favorites
+                INSERT OR IGNORE INTO favorites
                     (id, word, sentence, added_at, ease, interval_days, due_at, review_count, last_review, tags)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """

@@ -8,6 +8,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var hotKeyRef: EventHotKeyRef?
     var hotKeyRef2: EventHotKeyRef?
     var hotKeyHandler: EventHandlerRef?
+    private var reviewReminderTimer: DispatchSourceTimer?
+    private var activeReviewPanel: ReviewPanel?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !hasAnotherQuickDictInstance() else {
@@ -39,8 +41,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // 首次启动提示下载 ECDICT
             self?.checkECDICTAvailability()
 
-            // 每日首次启动复习提醒
-            self?.maybeShowReviewReminder()
+            // 到期时由 QuickDict 直接弹出复习面板
+            self?.scheduleNextReviewReminder()
         }
     }
     
@@ -387,6 +389,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func startReview() {
+        if let panel = activeReviewPanel, panel.isVisible {
+            panel.show()
+            return
+        }
+
         let due = WordBook.shared.getDueFavorites()
         if due.isEmpty {
             let alert = NSAlert()
@@ -395,7 +402,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             alert.runModal()
             return
         }
-        let panel = ReviewPanel(entries: due)
+        let panel = ReviewPanel(
+            entries: due,
+            onFinish: { [weak self] in
+                self?.activeReviewPanel = nil
+                self?.updateStatusBadge()
+                self?.scheduleNextReviewReminder()
+            },
+            onCancel: { [weak self] in
+                self?.activeReviewPanel = nil
+                self?.updateStatusBadge()
+                self?.scheduleNextReviewReminder(minimumDelay: 30 * 60)
+            }
+        )
+        activeReviewPanel = panel
         panel.show()
     }
 
@@ -516,31 +536,46 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         done.runModal()
     }
 
-    /// 每日首次启动复习提醒
-    private func maybeShowReviewReminder() {
-        let key = "QuickDict.lastReviewReminderDay"
-        let today = dayString(Date())
-        if UserDefaults.standard.string(forKey: key) == today { return }
+    private func scheduleNextReviewReminder(minimumDelay: TimeInterval = 1) {
+        reviewReminderTimer?.cancel()
+        reviewReminderTimer = nil
 
-        let due = WordBook.shared.dueFavoriteCount()
-        guard due > 0 else { return }
-
-        UserDefaults.standard.set(today, forKey: key)
-
-        let alert = NSAlert()
-        alert.messageText = "今天有 \(due) 个单词待复习"
-        alert.informativeText = "要现在开始复习吗？可以随时从菜单栏「开始复习」中进入。"
-        alert.addButton(withTitle: "开始复习")
-        alert.addButton(withTitle: "稍后")
-        if alert.runModal() == .alertFirstButtonReturn {
-            startReview()
+        let dueCount = WordBook.shared.dueFavoriteCount()
+        let delay: TimeInterval
+        if dueCount > 0 {
+            delay = minimumDelay
+        } else {
+            guard let nextDue = WordBook.shared.getAllFavorites()
+                .map(\.dueAt)
+                .min()
+            else {
+                NSLog("没有收藏词，跳过复习弹窗调度")
+                return
+            }
+            delay = max(minimumDelay, nextDue.timeIntervalSinceNow)
         }
+
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + delay)
+        timer.setEventHandler { [weak self] in
+            self?.fireReviewReminder()
+        }
+        reviewReminderTimer = timer
+        timer.resume()
+        NSLog("已调度复习弹窗，\(Int(delay)) 秒后检查到期词")
     }
 
-    private func dayString(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: date)
+    private func fireReviewReminder() {
+        reviewReminderTimer?.cancel()
+        reviewReminderTimer = nil
+
+        guard WordBook.shared.dueFavoriteCount() > 0 else {
+            NSLog("复习弹窗触发时暂无到期词，重新调度")
+            scheduleNextReviewReminder()
+            return
+        }
+        NSLog("复习弹窗触发，打开复习面板")
+        startReview()
     }
 
     /// 检查 ECDICT 是否已下载，如果没有且从未提示过，提示下载
@@ -580,6 +615,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationWillTerminate(_ notification: Notification) {
+        reviewReminderTimer?.cancel()
+        reviewReminderTimer = nil
+
         if let monitor = eventMonitor {
             NSEvent.removeMonitor(monitor)
         }
