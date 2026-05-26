@@ -86,14 +86,7 @@ final class ChineseEnglishResolver {
         append(&candidates, englishCandidates(fromAppleDefinition: appleDefinition))
         append(&candidates, ECDictionary.shared.lookupByChinese(original, limit: 8).map(\.word))
 
-        let filtered = candidates
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
-            .filter(Self.isUsefulEnglishCandidate)
-            .reduce(into: [String]()) { out, word in
-                if !out.contains(where: { $0.caseInsensitiveCompare(word) == .orderedSame }) {
-                    out.append(word)
-                }
-            }
+        let filtered = EnglishCandidateFilter.dictionaryBacked(candidates, maxLength: 32, maxWords: 4)
 
         guard !filtered.isEmpty else { return nil }
         let singleWords = filtered.filter { !$0.contains(" ") }
@@ -118,21 +111,6 @@ final class ChineseEnglishResolver {
         for word in words where !word.isEmpty {
             target.append(word)
         }
-    }
-
-    private static func isUsefulEnglishCandidate(_ word: String) -> Bool {
-        guard word.count <= 32 else { return false }
-        let lower = word.lowercased()
-        let allowedShortWords: Set<String> = ["ai", "ui", "ux", "os", "db", "io"]
-        if lower.count < 3, !allowedShortWords.contains(lower) { return false }
-        let stopWords: Set<String> = [
-            "verb", "noun", "adjective", "adverb", "transitive verb", "intransitive verb",
-            "plural noun", "countable noun", "uncountable noun", "preposition", "pronoun",
-            "article", "auxiliary verb", "modal verb", "interjection", "conjunction"
-        ]
-        guard !stopWords.contains(lower) else { return false }
-        guard lower.split(separator: " ").count <= 4 else { return false }
-        return word.range(of: #"^[a-z][a-z '\-]*$"#, options: .regularExpression) != nil
     }
 
     private func englishCandidates(fromAppleDefinition definition: String?) -> [String] {
