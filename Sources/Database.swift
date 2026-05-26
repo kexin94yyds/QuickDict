@@ -2,6 +2,10 @@ import Foundation
 import SQLite3
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+private let favoriteColumns = """
+    id, word, sentence, added_at, ease, interval_days, due_at, review_count, last_review, tags,
+    context_sentence, definition_snapshot, note
+"""
 
 /// 用户数据库（history / favorites / dict_cache）
 final class Database {
@@ -66,6 +70,9 @@ final class Database {
                 tags TEXT
             );
         """)
+        addColumnIfMissing(table: "favorites", column: "context_sentence", definition: "TEXT")
+        addColumnIfMissing(table: "favorites", column: "definition_snapshot", definition: "TEXT")
+        addColumnIfMissing(table: "favorites", column: "note", definition: "TEXT")
         exec("CREATE INDEX IF NOT EXISTS idx_favorites_due ON favorites(due_at);")
         exec("CREATE INDEX IF NOT EXISTS idx_favorites_word ON favorites(word);")
         dedupeFavoriteRows()
@@ -92,6 +99,27 @@ final class Database {
             return false
         }
         return true
+    }
+
+    private func addColumnIfMissing(table: String, column: String, definition: String) {
+        guard !columnExists(table: table, column: column) else { return }
+        _ = exec("ALTER TABLE \(table) ADD COLUMN \(column) \(definition);")
+    }
+
+    private func columnExists(table: String, column: String) -> Bool {
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table))", -1, &stmt, nil) == SQLITE_OK else {
+            return false
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let namePtr = sqlite3_column_text(stmt, 1) else { continue }
+            if String(cString: namePtr) == column {
+                return true
+            }
+        }
+        return false
     }
 
     private func dedupeFavoriteRows() {
@@ -215,8 +243,8 @@ final class Database {
         queue.sync {
             let sql = """
                 INSERT OR IGNORE INTO favorites
-                    (id, word, sentence, added_at, ease, interval_days, due_at, review_count, last_review, tags)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    (id, word, sentence, added_at, ease, interval_days, due_at, review_count, last_review, tags, context_sentence, definition_snapshot, note)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
@@ -239,6 +267,21 @@ final class Database {
                 sqlite3_bind_text(stmt, 10, tags, -1, SQLITE_TRANSIENT)
             } else {
                 sqlite3_bind_null(stmt, 10)
+            }
+            if let contextSentence = entry.contextSentence, !contextSentence.isEmpty {
+                sqlite3_bind_text(stmt, 11, contextSentence, -1, SQLITE_TRANSIENT)
+            } else {
+                sqlite3_bind_null(stmt, 11)
+            }
+            if let definitionSnapshot = entry.definitionSnapshot, !definitionSnapshot.isEmpty {
+                sqlite3_bind_text(stmt, 12, definitionSnapshot, -1, SQLITE_TRANSIENT)
+            } else {
+                sqlite3_bind_null(stmt, 12)
+            }
+            if let note = entry.note, !note.isEmpty {
+                sqlite3_bind_text(stmt, 13, note, -1, SQLITE_TRANSIENT)
+            } else {
+                sqlite3_bind_null(stmt, 13)
             }
             sqlite3_step(stmt)
         }
@@ -276,7 +319,7 @@ final class Database {
     func getFavorite(word: String, sentence: String) -> FavoriteEntry? {
         queue.sync {
             let sql = """
-                SELECT id, word, sentence, added_at, ease, interval_days, due_at, review_count, last_review, tags
+                SELECT \(favoriteColumns)
                 FROM favorites
                 WHERE word = ? AND sentence = ?
                 LIMIT 1
@@ -293,9 +336,9 @@ final class Database {
 
     func getAllFavorites(search: String? = nil) -> [FavoriteEntry] {
         queue.sync {
-            var sql = "SELECT id, word, sentence, added_at, ease, interval_days, due_at, review_count, last_review, tags FROM favorites"
+            var sql = "SELECT \(favoriteColumns) FROM favorites"
             if let s = search, !s.isEmpty {
-                sql += " WHERE word LIKE ? OR sentence LIKE ?"
+                sql += " WHERE word LIKE ? OR sentence LIKE ? OR context_sentence LIKE ? OR definition_snapshot LIKE ?"
             }
             sql += " ORDER BY added_at DESC"
 
@@ -306,6 +349,8 @@ final class Database {
                 let pattern = "%" + s + "%"
                 sqlite3_bind_text(stmt, 1, pattern, -1, SQLITE_TRANSIENT)
                 sqlite3_bind_text(stmt, 2, pattern, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_text(stmt, 3, pattern, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_text(stmt, 4, pattern, -1, SQLITE_TRANSIENT)
             }
             return readFavorites(stmt: stmt)
         }
@@ -314,7 +359,7 @@ final class Database {
     /// 到期需要复习的收藏（due_at <= now）
     func getDueFavorites(now: Date = Date(), limit: Int = 200) -> [FavoriteEntry] {
         queue.sync {
-            let sql = "SELECT id, word, sentence, added_at, ease, interval_days, due_at, review_count, last_review, tags FROM favorites WHERE due_at <= ? ORDER BY due_at ASC LIMIT ?"
+            let sql = "SELECT \(favoriteColumns) FROM favorites WHERE due_at <= ? ORDER BY due_at ASC LIMIT ?"
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
             defer { sqlite3_finalize(stmt) }
@@ -376,11 +421,24 @@ final class Database {
             if let p = sqlite3_column_text(stmt, 9) { return String(cString: p) }
             return nil
         }()
+        let contextSentence: String? = {
+            if let p = sqlite3_column_text(stmt, 10) { return String(cString: p) }
+            return nil
+        }()
+        let definitionSnapshot: String? = {
+            if let p = sqlite3_column_text(stmt, 11) { return String(cString: p) }
+            return nil
+        }()
+        let note: String? = {
+            if let p = sqlite3_column_text(stmt, 12) { return String(cString: p) }
+            return nil
+        }()
 
         return FavoriteEntry(
             id: id, word: word, sentence: sentence, addedAt: addedAt,
             ease: ease, intervalDays: intervalDays, dueAt: dueAt,
-            reviewCount: reviewCount, lastReview: lastReview, tags: tags
+            reviewCount: reviewCount, lastReview: lastReview, tags: tags,
+            contextSentence: contextSentence, definitionSnapshot: definitionSnapshot, note: note
         )
     }
 
@@ -399,15 +457,15 @@ final class Database {
         queue.sync {
             // 整词匹配（前后是空白/标点/句首句尾）
             let sql = """
-                SELECT id, sentence, added_at FROM favorites
-                WHERE (' ' || lower(sentence) || ' ') LIKE ('%' || ? || '%')
+                SELECT id, sentence, added_at, context_sentence FROM favorites
+                WHERE lower(COALESCE(NULLIF(context_sentence, ''), sentence)) LIKE ('%' || ? || '%')
                 ORDER BY added_at DESC
                 LIMIT ?
             """
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
             defer { sqlite3_finalize(stmt) }
-            let key = " \(word.lowercased()) "
+            let key = word.lowercased()
             sqlite3_bind_text(stmt, 1, key, -1, SQLITE_TRANSIENT)
             sqlite3_bind_int(stmt, 2, Int32(limit + 1)) // +1 防止 excludingID 占位
 
@@ -416,7 +474,14 @@ final class Database {
                 let idStr = String(cString: sqlite3_column_text(stmt, 0))
                 guard let id = UUID(uuidString: idStr) else { continue }
                 if let exclude = excludingID, id == exclude { continue }
-                let sentence = String(cString: sqlite3_column_text(stmt, 1))
+                let legacySentence = String(cString: sqlite3_column_text(stmt, 1))
+                let contextSentence: String? = {
+                    if let p = sqlite3_column_text(stmt, 3) { return String(cString: p) }
+                    return nil
+                }()
+                let sentence = FavoriteContentClassifier.normalizedContext(contextSentence) ?? legacySentence
+                guard !FavoriteContentClassifier.isLikelyDefinitionText(sentence),
+                      FavoriteContentClassifier.containsTerm(sentence, term: word) else { continue }
                 let savedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 2))
                 out.append(OwnContext(sentence: sentence, savedAt: savedAt, id: id))
                 if out.count >= limit { break }
@@ -478,8 +543,18 @@ struct FavoriteEntry {
     var reviewCount: Int       // 当前复习阶段
     var lastReview: Date?
     var tags: String?
+    var contextSentence: String?
+    var definitionSnapshot: String?
+    var note: String?
 
-    static func newFavorite(word: String, sentence: String, tags: String? = nil) -> FavoriteEntry {
+    static func newFavorite(
+        word: String,
+        sentence: String,
+        tags: String? = nil,
+        contextSentence: String? = nil,
+        definitionSnapshot: String? = nil,
+        note: String? = nil
+    ) -> FavoriteEntry {
         let now = Date()
         let firstDueAt = Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now.addingTimeInterval(86400)
         return FavoriteEntry(
@@ -492,7 +567,10 @@ struct FavoriteEntry {
             dueAt: firstDueAt, // 首次复习从明天开始
             reviewCount: 0,
             lastReview: nil,
-            tags: tags
+            tags: tags,
+            contextSentence: contextSentence,
+            definitionSnapshot: definitionSnapshot,
+            note: note
         )
     }
 }
