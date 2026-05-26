@@ -137,27 +137,22 @@ final class GeminiEnglishResolver {
             return nil
         }
 
-        let primary = (obj["primary"] as? String).map(cleanWord)
-        let candidates = (obj["candidates"] as? [String] ?? []).map(cleanWord)
-        let imageTerms = (obj["image_terms"] as? [String] ?? []).map(cleanWord)
+        let primary = obj["primary"] as? String
+        let candidates = obj["candidates"] as? [String] ?? []
+        let imageTerms = obj["image_terms"] as? [String] ?? []
 
         var ordered: [String] = []
         if let primary, !primary.isEmpty { ordered.append(primary) }
         appendUnique(candidates, to: &ordered)
-        let filtered = ordered.filter(isUsefulCandidate)
+        let filtered = EnglishCandidateFilter.dictionaryBacked(ordered)
         guard !filtered.isEmpty else { return nil }
 
         var imageOrdered: [String] = []
         appendUnique(imageTerms, to: &imageOrdered)
         appendUnique(filtered, to: &imageOrdered)
-        imageOrdered = imageOrdered.filter(isUsefulCandidate)
+        imageOrdered = EnglishCandidateFilter.usefulUnique(imageOrdered)
 
         return ChineseEnglishResolution(original: original, candidates: filtered, imageTerms: imageOrdered)
-    }
-
-    private static func cleanWord(_ word: String) -> String {
-        word.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
-            .lowercased()
     }
 
     private static func appendUnique(_ words: [String], to out: inout [String]) {
@@ -166,13 +161,5 @@ final class GeminiEnglishResolver {
                 out.append(word)
             }
         }
-    }
-
-    private static func isUsefulCandidate(_ word: String) -> Bool {
-        guard word.count <= 40 else { return false }
-        let allowedShortWords: Set<String> = ["ai", "ui", "ux", "os", "db", "io"]
-        if word.count < 3, !allowedShortWords.contains(word.lowercased()) { return false }
-        guard word.split(separator: " ").count <= 5 else { return false }
-        return word.range(of: #"^[a-z][a-z '\-]*$"#, options: .regularExpression) != nil
     }
 }
