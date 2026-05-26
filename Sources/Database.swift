@@ -338,7 +338,7 @@ final class Database {
         queue.sync {
             var sql = "SELECT \(favoriteColumns) FROM favorites"
             if let s = search, !s.isEmpty {
-                sql += " WHERE word LIKE ? OR sentence LIKE ? OR context_sentence LIKE ? OR definition_snapshot LIKE ?"
+                sql += " WHERE word LIKE ? ESCAPE '\\' OR sentence LIKE ? ESCAPE '\\' OR context_sentence LIKE ? ESCAPE '\\' OR definition_snapshot LIKE ? ESCAPE '\\'"
             }
             sql += " ORDER BY added_at DESC"
 
@@ -346,7 +346,11 @@ final class Database {
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
             defer { sqlite3_finalize(stmt) }
             if let s = search, !s.isEmpty {
-                let pattern = "%" + s + "%"
+                let escaped = s
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "%", with: "\\%")
+                    .replacingOccurrences(of: "_", with: "\\_")
+                let pattern = "%" + escaped + "%"
                 sqlite3_bind_text(stmt, 1, pattern, -1, SQLITE_TRANSIENT)
                 sqlite3_bind_text(stmt, 2, pattern, -1, SQLITE_TRANSIENT)
                 sqlite3_bind_text(stmt, 3, pattern, -1, SQLITE_TRANSIENT)

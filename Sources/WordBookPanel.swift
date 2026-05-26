@@ -49,7 +49,7 @@ class WordBookPanel: NSPanel {
         headerLabel.translatesAutoresizingMaskIntoConstraints = false
 
         searchField = NSSearchField()
-        searchField.placeholderString = "搜索单词或例句"
+        searchField.placeholderString = "搜索单词、语境或释义"
         searchField.target = self
         searchField.action = #selector(searchChanged)
         searchField.translatesAutoresizingMaskIntoConstraints = false
@@ -138,7 +138,7 @@ class WordBookPanel: NSPanel {
         switch currentTab {
         case .favorites:
             addColumn("word", title: "单词", width: 110)
-            addColumn("sentence", title: "例句 / 上下文", width: 320)
+            addColumn("sentence", title: "语境 / 释义快照", width: 320)
             addColumn("date", title: "添加时间", width: 110)
             addColumn("due", title: "下次复习", width: 110)
         case .history:
@@ -237,7 +237,11 @@ class WordBookPanel: NSPanel {
             return // 已在收藏内
         case .history:
             let h = history[row]
-            _ = WordBook.shared.addFavorite(word: h.word, sentence: h.lastContext ?? h.word)
+            _ = WordBook.shared.addFavorite(
+                word: h.word,
+                contextSentence: h.lastContext,
+                definitionSnapshot: DictService.shared.lookup(h.word)?.definition
+            )
             reload()
         }
     }
@@ -279,7 +283,14 @@ class WordBookPanel: NSPanel {
             case .favorites:
                 text = "我的收藏单词\n\n"
                 for (i, e) in self.favorites.enumerated() {
-                    text += "\(i + 1). \(e.word)\n   例句: \(e.sentence)\n   添加: \(e.addedAt.formatted())\n\n"
+                    text += "\(i + 1). \(e.word)\n"
+                    if let context = FavoriteContentClassifier.contextText(for: e) {
+                        text += "   语境: \(context)\n"
+                    }
+                    if let definition = FavoriteContentClassifier.definitionText(for: e) {
+                        text += "   释义快照: \(definition)\n"
+                    }
+                    text += "   添加: \(e.addedAt.formatted())\n\n"
                 }
             case .history:
                 text = "查询历史\n\n"
@@ -306,7 +317,7 @@ class WordBookPanel: NSPanel {
             var lines: [String] = []
             let words: [(word: String, sentence: String)] = {
                 switch self.currentTab {
-                case .favorites: return self.favorites.map { ($0.word, $0.sentence) }
+                case .favorites: return self.favorites.map { ($0.word, FavoriteContentClassifier.exportContext(for: $0)) }
                 case .history: return self.history.map { ($0.word, $0.lastContext ?? "") }
                 }
             }()
@@ -349,7 +360,7 @@ extension WordBookPanel: NSTableViewDataSource, NSTableViewDelegate {
                 cell.stringValue = e.word
                 cell.font = .boldSystemFont(ofSize: 13)
             case "sentence":
-                cell.stringValue = e.sentence
+                cell.stringValue = FavoriteContentClassifier.listPreview(for: e)
                 cell.font = .systemFont(ofSize: 12)
                 cell.textColor = .secondaryLabelColor
             case "date":

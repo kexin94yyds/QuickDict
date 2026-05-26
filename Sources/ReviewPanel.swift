@@ -209,7 +209,7 @@ final class ReviewPanel: NSPanel {
         progressLabel.stringValue = "进度 \(index + 1) / \(queue.count)"
         wordLabel.stringValue = entry.word
         phoneticLabel.stringValue = ""
-        sentenceLabel.stringValue = entry.sentence
+        sentenceLabel.stringValue = FavoriteContentClassifier.reviewPrompt(for: entry)
         defRevealed = false
         contentScroll.isHidden = true
         ratingStack.isHidden = true
