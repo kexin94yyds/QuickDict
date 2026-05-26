@@ -190,19 +190,17 @@ class HUDPanel: NSPanel {
         updateFavoriteButtonState()
     }
 
-    private func favoriteSentence() -> String {
-        let base: String
-        if let ctx = context, !ctx.isEmpty {
-            base = ctx
-        } else {
-            base = definition.split(separator: "\n").first.map(String.init) ?? definition
-        }
-        return String(base.trimmingCharacters(in: .whitespacesAndNewlines).prefix(400))
+    private func favoriteContextSentence() -> String? {
+        FavoriteContentClassifier.normalizedContext(context)
+    }
+
+    private func favoriteDefinitionSnapshot() -> String? {
+        FavoriteContentClassifier.normalizedDefinition(definition)
     }
 
     private func updateFavoriteButtonState() {
         guard let button = favoriteButton else { return }
-        if WordBook.shared.hasFavorite(word: word, sentence: favoriteSentence()) {
+        if WordBook.shared.hasFavorite(word: word, contextSentence: favoriteContextSentence()) {
             button.title = "★ 已收藏"
             button.isEnabled = false
         } else {
@@ -313,7 +311,11 @@ class HUDPanel: NSPanel {
     }
 
     @objc private func addToFavorites() {
-        _ = WordBook.shared.addFavorite(word: word, sentence: favoriteSentence())
+        _ = WordBook.shared.addFavorite(
+            word: word,
+            contextSentence: favoriteContextSentence(),
+            definitionSnapshot: favoriteDefinitionSnapshot()
+        )
         updateFavoriteButtonState()
     }
 

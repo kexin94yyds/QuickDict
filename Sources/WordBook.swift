@@ -42,28 +42,63 @@ final class WordBook {
         word.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func normalizeFavoriteSentence(_ sentence: String) -> String {
-        String(sentence.trimmingCharacters(in: .whitespacesAndNewlines).prefix(400))
+    private func normalizeFavoriteSentence(_ sentence: String?) -> String? {
+        FavoriteContentClassifier.normalizedContext(sentence)
     }
 
     func existingFavorite(word: String, sentence: String) -> FavoriteEntry? {
         let normalizedWord = normalizeFavoriteWord(word)
-        let normalizedSentence = normalizeFavoriteSentence(sentence)
+        let normalizedSentence = normalizeFavoriteSentence(sentence) ?? normalizedWord
         return Database.shared.getFavorite(word: normalizedWord, sentence: normalizedSentence)
+    }
+
+    func existingFavorite(word: String, contextSentence: String?) -> FavoriteEntry? {
+        let normalizedWord = normalizeFavoriteWord(word)
+        let normalizedContext = normalizeFavoriteSentence(contextSentence)
+        let legacySentence = FavoriteContentClassifier.legacySentence(
+            word: normalizedWord,
+            contextSentence: normalizedContext
+        )
+        return Database.shared.getFavorite(word: normalizedWord, sentence: legacySentence)
     }
 
     func hasFavorite(word: String, sentence: String) -> Bool {
         existingFavorite(word: word, sentence: sentence) != nil
     }
 
+    func hasFavorite(word: String, contextSentence: String?) -> Bool {
+        existingFavorite(word: word, contextSentence: contextSentence) != nil
+    }
+
     func addFavorite(word: String, sentence: String, tags: String? = nil) -> FavoriteEntry {
+        addFavorite(word: word, contextSentence: sentence, definitionSnapshot: nil, note: nil, tags: tags)
+    }
+
+    func addFavorite(
+        word: String,
+        contextSentence: String?,
+        definitionSnapshot: String?,
+        note: String? = nil,
+        tags: String? = nil
+    ) -> FavoriteEntry {
         let normalizedWord = normalizeFavoriteWord(word)
-        let normalizedSentence = normalizeFavoriteSentence(sentence)
-        if let existing = Database.shared.getFavorite(word: normalizedWord, sentence: normalizedSentence) {
+        let normalizedContext = normalizeFavoriteSentence(contextSentence)
+        let legacySentence = FavoriteContentClassifier.legacySentence(
+            word: normalizedWord,
+            contextSentence: normalizedContext
+        )
+        if let existing = Database.shared.getFavorite(word: normalizedWord, sentence: legacySentence) {
             return existing
         }
 
-        let entry = FavoriteEntry.newFavorite(word: normalizedWord, sentence: normalizedSentence, tags: tags)
+        let entry = FavoriteEntry.newFavorite(
+            word: normalizedWord,
+            sentence: legacySentence,
+            tags: tags,
+            contextSentence: normalizedContext,
+            definitionSnapshot: FavoriteContentClassifier.normalizedDefinition(definitionSnapshot),
+            note: FavoriteContentClassifier.normalizedNote(note)
+        )
         Database.shared.addFavorite(entry)
         return entry
     }
@@ -116,7 +151,10 @@ final class WordBook {
                     dueAt: old.date,
                     reviewCount: old.reviewCount,
                     lastReview: old.lastReview,
-                    tags: nil
+                    tags: nil,
+                    contextSentence: FavoriteContentClassifier.isLikelyDefinitionText(old.sentence) ? nil : old.sentence,
+                    definitionSnapshot: FavoriteContentClassifier.isLikelyDefinitionText(old.sentence) ? old.sentence : nil,
+                    note: nil
                 )
                 Database.shared.addFavorite(entry)
             }
