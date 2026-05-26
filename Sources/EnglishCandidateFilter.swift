@@ -30,7 +30,7 @@ enum EnglishCandidateFilter {
         lookup: (String) -> LookupResult? = { DictService.shared.lookup($0) }
     ) -> [String] {
         usefulUnique(words, maxLength: maxLength, maxWords: maxWords)
-            .compactMap { word in
+            .compactMap { word -> String? in
                 guard let result = lookup(word) else { return nil }
                 return normalize(result.word)
             }
