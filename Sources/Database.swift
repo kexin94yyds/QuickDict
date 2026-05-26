@@ -306,6 +306,18 @@ final class Database {
         }
     }
 
+    func updateFavoriteDueAt(id: UUID, dueAt: Date) {
+        queue.sync {
+            let sql = "UPDATE favorites SET due_at=? WHERE id = ?"
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_double(stmt, 1, dueAt.timeIntervalSince1970)
+            sqlite3_bind_text(stmt, 2, id.uuidString, -1, SQLITE_TRANSIENT)
+            sqlite3_step(stmt)
+        }
+    }
+
     func deleteFavorite(id: UUID) {
         queue.sync {
             var stmt: OpaquePointer?

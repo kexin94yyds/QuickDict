@@ -119,6 +119,28 @@ final class WordBook {
         Database.shared.getDueFavorites()
     }
 
+    func getDueFavoritesForReview(now: Date = Date()) -> [FavoriteEntry] {
+        let dueEntries = Database.shared.getDueFavorites(now: now, limit: 500)
+        let prepared = ReviewScheduler.prepareReviewQueue(dueEntries, now: now)
+        for deferred in prepared.deferred {
+            Database.shared.updateFavoriteDueAt(id: deferred.entry.id, dueAt: deferred.dueAt)
+        }
+        return prepared.reviewNow
+    }
+
+    func sevenDayReviewLoadSummary(now: Date = Date()) -> String {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: now)
+        var counts = Array(repeating: 0, count: 7)
+        for entry in Database.shared.getAllFavorites() {
+            let dueDay = calendar.startOfDay(for: entry.dueAt)
+            guard let offset = calendar.dateComponents([.day], from: start, to: dueDay).day,
+                  (0..<counts.count).contains(offset) else { continue }
+            counts[offset] += 1
+        }
+        return counts.map(String.init).joined(separator: "/")
+    }
+
     func deleteFavorite(id: UUID) {
         Database.shared.deleteFavorite(id: id)
     }

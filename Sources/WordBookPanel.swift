@@ -190,7 +190,8 @@ class WordBookPanel: NSPanel {
         case .favorites:
             favorites = WordBook.shared.getAllFavorites(search: q)
             let due = WordBook.shared.dueFavoriteCount()
-            headerLabel.stringValue = "共 \(favorites.count) 条收藏  ·  \(due) 个待复习"
+            let load = WordBook.shared.sevenDayReviewLoadSummary()
+            headerLabel.stringValue = "共 \(favorites.count) 条收藏  ·  \(due) 个待复习  ·  7天负载 \(load)"
         case .history:
             history = WordBook.shared.getHistory(search: q, limit: 1000)
             headerLabel.stringValue = "共 \(history.count) 条查询历史"
@@ -259,11 +260,11 @@ class WordBookPanel: NSPanel {
     }
 
     @objc private func startReview() {
-        let due = WordBook.shared.getDueFavorites()
+        let due = WordBook.shared.getDueFavoritesForReview()
         guard !due.isEmpty else {
             let alert = NSAlert()
             alert.messageText = "暂无到期复习的单词"
-            alert.informativeText = "现在还没有到期的复习。先收藏一些单词，复习会按固定间隔自动安排。"
+            alert.informativeText = "现在还没有到期的复习。先收藏一些单词，复习会按轻量间隔自动安排。"
             alert.runModal()
             return
         }

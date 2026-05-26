@@ -396,11 +396,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let due = WordBook.shared.getDueFavorites()
+        let due = WordBook.shared.getDueFavoritesForReview()
         if due.isEmpty {
             let alert = NSAlert()
             alert.messageText = "暂无到期复习的单词"
-            alert.informativeText = "现在还没有要复习的单词。先收藏一些单词、句子后，复习会按固定间隔自动安排。"
+            alert.informativeText = "现在还没有要复习的单词。先收藏一些单词、句子后，复习会按轻量间隔自动安排。"
             alert.runModal()
             return
         }
