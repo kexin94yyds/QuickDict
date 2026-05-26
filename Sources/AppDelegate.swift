@@ -250,7 +250,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         // 记录到 history（不自动保存为收藏，用户要保存自己点 ☆）
-        WordBook.shared.recordLookup(word: result?.word ?? lookupWord, context: context)
+        let historyWord = result?.word ?? chineseResolution?.original ?? lookupWord
+        WordBook.shared.recordLookup(word: historyWord, context: context)
 
         if let result {
             let displayWord = chineseResolution.map { "\($0.original) → \(result.word)" }

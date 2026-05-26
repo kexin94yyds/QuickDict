@@ -53,6 +53,13 @@ final class ChineseEnglishResolver {
         "问题": ["problem", "issue"],
         "目标": ["goal", "target"],
         "方法": ["method", "approach"],
+        "执行": ["execute", "perform", "run"],
+        "压缩": ["compress", "compression", "zip"],
+        "错误": ["error", "mistake", "bug"],
+        "新增": ["add", "new", "addition"],
+        "自学": ["self-study", "learn", "study"],
+        "事情": ["thing", "matter"],
+        "乐趣": ["fun", "enjoyment", "pleasure"],
         "重启": ["restart", "reboot"],
         "重新启动": ["restart", "reboot"],
         "苹果": ["apple"],
@@ -114,8 +121,10 @@ final class ChineseEnglishResolver {
     }
 
     private static func isUsefulEnglishCandidate(_ word: String) -> Bool {
-        guard word.count >= 2, word.count <= 32 else { return false }
+        guard word.count <= 32 else { return false }
         let lower = word.lowercased()
+        let allowedShortWords: Set<String> = ["ai", "ui", "ux", "os", "db", "io"]
+        if lower.count < 3, !allowedShortWords.contains(lower) { return false }
         let stopWords: Set<String> = [
             "verb", "noun", "adjective", "adverb", "transitive verb", "intransitive verb",
             "plural noun", "countable noun", "uncountable noun", "preposition", "pronoun",

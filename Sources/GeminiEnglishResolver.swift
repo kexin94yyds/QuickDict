@@ -169,7 +169,9 @@ final class GeminiEnglishResolver {
     }
 
     private static func isUsefulCandidate(_ word: String) -> Bool {
-        guard word.count >= 2, word.count <= 40 else { return false }
+        guard word.count <= 40 else { return false }
+        let allowedShortWords: Set<String> = ["ai", "ui", "ux", "os", "db", "io"]
+        if word.count < 3, !allowedShortWords.contains(word.lowercased()) { return false }
         guard word.split(separator: " ").count <= 5 else { return false }
         return word.range(of: #"^[a-z][a-z '\-]*$"#, options: .regularExpression) != nil
     }
