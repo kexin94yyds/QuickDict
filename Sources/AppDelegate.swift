@@ -72,7 +72,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "测试查词 (手动)", action: #selector(testLookup), keyEquivalent: "t"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "快捷键 ⌃L : 查词（任意 App 选中后按）", action: nil, keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "快捷键 ⇧⌘B : 打开收藏库（全局）", action: nil, keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "快捷键 ⇧⌥B : 打开收藏库（全局）", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "打开单词本", action: #selector(openWordBook), keyEquivalent: "b"))
         let reviewItem = NSMenuItem(title: "开始复习", action: #selector(startReview), keyEquivalent: "r")
@@ -171,11 +171,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         NSLog("注册快捷键状态: \(registerStatus)")
 
-        // ⇧⌘B → 打开收藏库
+        // ⇧⌥B → 打开收藏库
         let hotKeyID2 = EventHotKeyID(signature: fourCharCode("QDBK"), id: 2)
         let registerStatus2 = RegisterEventHotKey(
             UInt32(kVK_ANSI_B),
-            UInt32(cmdKey | shiftKey),
+            UInt32(optionKey | shiftKey),
             hotKeyID2,
             GetApplicationEventTarget(),
             0,

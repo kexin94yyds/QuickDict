@@ -11,6 +11,15 @@
 	</dict>
 	<key>files2</key>
 	<dict>
+		<key>MacOS/QuickDict.bak-20260309-1023</key>
+		<dict>
+			<key>cdhash</key>
+			<data>
+			gZu8kzqcEIdBx8Pr7lvvbq7SapQ=
+			</data>
+			<key>requirement</key>
+			<string>cdhash H"819bbc933a9c108741c7c3ebee5bef6eaed26a94"</string>
+		</dict>
 		<key>Resources/AppIcon.icns</key>
 		<dict>
 			<key>hash2</key>

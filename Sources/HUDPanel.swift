@@ -9,6 +9,7 @@ class HUDPanel: NSPanel {
     private let imageWords: [String]
 
     private var globalClickMonitor: Any?
+    private var globalKeyMonitor: Any?
     private var localKeyMonitor: Any?
     private var autoCloseWorkItem: DispatchWorkItem?
     private var favoriteButton: NSButton?
@@ -272,12 +273,7 @@ class HUDPanel: NSPanel {
 
     private func setupAutoClose() {
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            if modifiers.contains(.command),
-               !modifiers.contains(.shift),
-               !modifiers.contains(.option),
-               !modifiers.contains(.control),
-               event.charactersIgnoringModifiers?.lowercased() == "b" {
+            if Self.isPlainCommandB(event) {
                 self?.addToFavorites()
                 return nil
             }
@@ -290,12 +286,28 @@ class HUDPanel: NSPanel {
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             self?.closePanel()
         }
+        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard Self.isPlainCommandB(event) else { return }
+            DispatchQueue.main.async {
+                self?.addToFavorites()
+            }
+        }
+    }
+
+    private static func isPlainCommandB(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        return modifiers.contains(.command)
+            && !modifiers.contains(.shift)
+            && !modifiers.contains(.option)
+            && !modifiers.contains(.control)
+            && event.charactersIgnoringModifiers?.lowercased() == "b"
     }
 
     @objc private func closePanel() {
         autoCloseWorkItem?.cancel()
         autoCloseWorkItem = nil
         if let m = globalClickMonitor { NSEvent.removeMonitor(m); globalClickMonitor = nil }
+        if let m = globalKeyMonitor { NSEvent.removeMonitor(m); globalKeyMonitor = nil }
         if let m = localKeyMonitor { NSEvent.removeMonitor(m); localKeyMonitor = nil }
         self.orderOut(nil)
     }
@@ -307,6 +319,7 @@ class HUDPanel: NSPanel {
 
     deinit {
         if let m = globalClickMonitor { NSEvent.removeMonitor(m) }
+        if let m = globalKeyMonitor { NSEvent.removeMonitor(m) }
         if let m = localKeyMonitor { NSEvent.removeMonitor(m) }
     }
 
