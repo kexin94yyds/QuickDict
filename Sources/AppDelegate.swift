@@ -77,6 +77,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "打开单词本", action: #selector(openWordBook), keyEquivalent: "b"))
         let reviewItem = NSMenuItem(title: "开始复习", action: #selector(startReview), keyEquivalent: "r")
         menu.addItem(reviewItem)
+        menu.addItem(NSMenuItem(title: "复习设置…", action: #selector(openReviewSettings), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "下载/更新离线词典 (ECDICT)", action: #selector(downloadECDICT), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "从本地文件导入词典…", action: #selector(importECDICT), keyEquivalent: ""))
@@ -419,6 +420,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         activeReviewPanel = panel
         panel.show()
+    }
+
+    @objc func openReviewSettings() {
+        let dailyLimitField = NSTextField(string: "\(ReviewSettings.dailyReviewLimit)")
+        dailyLimitField.alignment = .right
+        dailyLimitField.formatter = integerFormatter()
+
+        let relearnField = NSTextField(string: "\(ReviewSettings.relearnDelayMinutes)")
+        relearnField.alignment = .right
+        relearnField.formatter = integerFormatter()
+
+        let form = NSGridView(views: [
+            [NSTextField(labelWithString: "每日上限"), dailyLimitField],
+            [NSTextField(labelWithString: "忘记后再学（分钟）"), relearnField]
+        ])
+        form.column(at: 0).xPlacement = .trailing
+        form.column(at: 1).width = 80
+        form.rowSpacing = 8
+        form.translatesAutoresizingMaskIntoConstraints = false
+
+        let alert = NSAlert()
+        alert.messageText = "复习设置"
+        alert.informativeText = "设置会立即保存，并影响下次开始复习。"
+        alert.accessoryView = form
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "取消")
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        ReviewSettings.dailyReviewLimit = dailyLimitField.integerValue
+        ReviewSettings.relearnDelayMinutes = relearnField.integerValue
+        scheduleNextReviewReminder()
+    }
+
+    private func integerFormatter() -> NumberFormatter {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .none
+        formatter.allowsFloats = false
+        formatter.minimum = 1
+        return formatter
     }
 
     @objc func downloadECDICT() {
