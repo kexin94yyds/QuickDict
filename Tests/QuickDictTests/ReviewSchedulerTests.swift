@@ -5,6 +5,9 @@ final class ReviewSchedulerTests: XCTestCase {
     func testForgotSchedulesTenMinuteRelearn() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let entry = makeEntry(ease: 2.5, intervalDays: 1, reviewCount: 0, dueAt: now)
+        let oldDelay = ReviewSettings.relearnDelayMinutes
+        ReviewSettings.relearnDelayMinutes = 10
+        defer { ReviewSettings.relearnDelayMinutes = oldDelay }
 
         let updated = ReviewScheduler.schedule(entry: entry, quality: .forgot, now: now)
 
