@@ -88,6 +88,9 @@ class WordBookPanel: NSPanel {
         let deleteButton = NSButton(title: "删除选中", target: self, action: #selector(deleteSelected))
         deleteButton.translatesAutoresizingMaskIntoConstraints = false
 
+        let cleanupPreviewButton = NSButton(title: "清洗预览", target: self, action: #selector(showCleanupPreview))
+        cleanupPreviewButton.translatesAutoresizingMaskIntoConstraints = false
+
         container.addSubview(segment)
         container.addSubview(headerLabel)
         container.addSubview(searchField)
@@ -97,6 +100,7 @@ class WordBookPanel: NSPanel {
         container.addSubview(exportTxtButton)
         container.addSubview(exportAnkiButton)
         container.addSubview(deleteButton)
+        container.addSubview(cleanupPreviewButton)
 
         NSLayoutConstraint.activate([
             segment.topAnchor.constraint(equalTo: container.topAnchor, constant: 14),
@@ -122,6 +126,9 @@ class WordBookPanel: NSPanel {
 
             deleteButton.bottomAnchor.constraint(equalTo: refreshButton.bottomAnchor),
             deleteButton.leadingAnchor.constraint(equalTo: reviewButton.trailingAnchor, constant: 8),
+
+            cleanupPreviewButton.bottomAnchor.constraint(equalTo: refreshButton.bottomAnchor),
+            cleanupPreviewButton.leadingAnchor.constraint(equalTo: deleteButton.trailingAnchor, constant: 8),
 
             exportAnkiButton.bottomAnchor.constraint(equalTo: refreshButton.bottomAnchor),
             exportAnkiButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
@@ -177,6 +184,60 @@ class WordBookPanel: NSPanel {
         currentTab = newTab
         rebuildColumns()
         reload()
+    }
+
+    @objc private func showCleanupPreview() {
+        let entries = WordBook.shared.getAllFavorites()
+        var realContext = 0
+        var definitionSnapshot = 0
+        var missingContext = 0
+        var codeLike = 0
+        var details: [String] = []
+
+        for entry in entries {
+            let label: String
+            if let context = FavoriteContentClassifier.contextText(for: entry) {
+                realContext += 1
+                if isLikelyCodeSnippet(context) { codeLike += 1 }
+                label = isLikelyCodeSnippet(context) ? "代码片段" : "真实语境"
+            } else if FavoriteContentClassifier.definitionText(for: entry) != nil {
+                definitionSnapshot += 1
+                label = "释义快照"
+            } else {
+                missingContext += 1
+                label = "暂无语境"
+            }
+            if details.count < 20 {
+                details.append("\(entry.word)  ·  \(label)")
+            }
+        }
+
+        let text = """
+        总收藏：\(entries.count)
+        真实语境：\(realContext)
+        释义快照：\(definitionSnapshot)
+        暂无语境：\(missingContext)
+        疑似代码片段：\(codeLike)
+
+        前 20 条预览：
+        \(details.joined(separator: "\n"))
+        """
+
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 460, height: 260))
+        scroll.hasVerticalScroller = true
+        let textView = NSTextView(frame: scroll.bounds)
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.string = text
+        scroll.documentView = textView
+
+        let alert = NSAlert()
+        alert.messageText = "旧收藏清洗预览"
+        alert.informativeText = "仅预览分类，不会修改数据库。"
+        alert.accessoryView = scroll
+        alert.addButton(withTitle: "好")
+        alert.runModal()
     }
 
     @objc private func searchChanged() {
