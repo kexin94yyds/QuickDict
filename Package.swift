@@ -8,6 +8,11 @@ let package = Package(
         .executableTarget(
             name: "QuickDict",
             path: "Sources"
+        ),
+        .testTarget(
+            name: "QuickDictTests",
+            dependencies: ["QuickDict"],
+            path: "Tests/QuickDictTests"
         )
     ]
 )
