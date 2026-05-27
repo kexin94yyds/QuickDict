@@ -471,4 +471,14 @@ extension WordBookPanel: NSTableViewDataSource, NSTableViewDelegate {
         f.dateFormat = "MM/dd HH:mm"
         return f.string(from: d)
     }
+
+    private func isLikelyCodeSnippet(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return lower.contains("func ")
+            || lower.contains("class ")
+            || lower.contains("struct ")
+            || lower.contains("import ")
+            || text.contains("{")
+            || text.contains("};")
+    }
 }
