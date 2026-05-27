@@ -17,8 +17,8 @@ struct ReviewQueuePreparation {
 /// 基础间隔：1 / 2 / 3 / 5 / 8 / 14 / 30 天；forgot 进入 10 分钟再学。
 enum ReviewScheduler {
     private static let intervals = [1, 2, 3, 5, 8, 14, 30]
-    static let dailyReviewLimit = 20
-    static let relearnDelay: TimeInterval = 10 * 60
+    static var dailyReviewLimit: Int { ReviewSettings.dailyReviewLimit }
+    static var relearnDelay: TimeInterval { ReviewSettings.relearnDelay }
 
     /// 根据当前 entry 状态和用户评分，返回更新后的间隔与下次到期时间
     static func schedule(entry: FavoriteEntry, quality: RecallQuality, now: Date = Date()) -> FavoriteEntry {
