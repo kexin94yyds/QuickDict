@@ -225,6 +225,38 @@ final class Database {
         }
     }
 
+    /// 合并用户明确选择的备份。重复单词保留较大的查询次数和更新的上下文，
+    /// 因此重复导入同一份备份是幂等的。
+    func mergeImportedHistory(_ entry: HistoryEntry) {
+        queue.sync {
+            let sql = """
+                INSERT INTO history(word, lookup_count, first_at, last_at, last_context)
+                VALUES(?, ?, ?, ?, ?)
+                ON CONFLICT(word) DO UPDATE SET
+                    lookup_count = MAX(history.lookup_count, excluded.lookup_count),
+                    first_at = MIN(history.first_at, excluded.first_at),
+                    last_context = CASE
+                        WHEN excluded.last_at >= history.last_at THEN excluded.last_context
+                        ELSE history.last_context
+                    END,
+                    last_at = MAX(history.last_at, excluded.last_at);
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, entry.word, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int(stmt, 2, Int32(clamping: entry.lookupCount))
+            sqlite3_bind_double(stmt, 3, entry.firstAt.timeIntervalSince1970)
+            sqlite3_bind_double(stmt, 4, entry.lastAt.timeIntervalSince1970)
+            if let context = entry.lastContext, !context.isEmpty {
+                sqlite3_bind_text(stmt, 5, context, -1, SQLITE_TRANSIENT)
+            } else {
+                sqlite3_bind_null(stmt, 5)
+            }
+            sqlite3_step(stmt)
+        }
+    }
+
     func historyCount() -> Int {
         queue.sync {
             var stmt: OpaquePointer?
@@ -540,7 +572,7 @@ final class Database {
 
 // MARK: - Models
 
-struct HistoryEntry {
+struct HistoryEntry: Codable, Equatable {
     let word: String
     let lookupCount: Int
     let firstAt: Date
@@ -548,7 +580,7 @@ struct HistoryEntry {
     let lastContext: String?
 }
 
-struct FavoriteEntry {
+struct FavoriteEntry: Codable, Equatable {
     let id: UUID
     let word: String
     let sentence: String

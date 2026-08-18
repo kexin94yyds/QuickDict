@@ -1,17 +1,112 @@
 import Cocoa
+#if !APP_STORE
 import Carbon
+#endif
+
+enum QuickDictPublicLinks {
+    static let support = URL(string: "https://kexin94yyds.github.io/quickdict-support/")!
+    static let privacy = URL(string: "https://kexin94yyds.github.io/quickdict-support/privacy.html")!
+}
+
+/// Owns the temporary ECDICT progress window so AppKit and Swift ARC have one
+/// explicit lifetime. A programmatically-created NSWindow must not release
+/// itself on close while asynchronous callbacks can still reference its UI.
+final class ECDICTDownloadProgressUI {
+    let window: NSWindow
+    let label: NSTextField
+    let progressIndicator: NSProgressIndicator
+
+    init() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 130),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "下载 ECDICT…"
+        window.isReleasedWhenClosed = false
+        window.center()
+
+        let label = NSTextField(labelWithString: "正在下载词典… 0%")
+        label.translatesAutoresizingMaskIntoConstraints = false
+        let progressIndicator = NSProgressIndicator()
+        progressIndicator.isIndeterminate = false
+        progressIndicator.minValue = 0
+        progressIndicator.maxValue = 1
+        progressIndicator.translatesAutoresizingMaskIntoConstraints = false
+
+        let content = NSView()
+        content.addSubview(label)
+        content.addSubview(progressIndicator)
+        window.contentView = content
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: content.topAnchor, constant: 24),
+            label.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
+            label.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
+            progressIndicator.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 14),
+            progressIndicator.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
+            progressIndicator.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20)
+        ])
+
+        self.window = window
+        self.label = label
+        self.progressIndicator = progressIndicator
+    }
+
+    func show() {
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func updateProgress(_ progress: Double) {
+        let clamped = min(max(progress, 0), 1)
+        progressIndicator.doubleValue = clamped
+        label.stringValue = String(format: "正在下载词典… %.0f%%", clamped * 100)
+    }
+
+    func close() {
+        window.close()
+    }
+}
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var popover: NSPopover!
     var eventMonitor: Any?
+#if !APP_STORE
     var hotKeyRef: EventHotKeyRef?
     var hotKeyRef2: EventHotKeyRef?
     var hotKeyHandler: EventHandlerRef?
+#endif
     private var reviewReminderTimer: DispatchSourceTimer?
     private var activeReviewPanel: ReviewPanel?
+    private var quickDictServiceProvider: QuickDictServiceProvider?
+    private var ecdictDownloadProgressUI: ECDICTDownloadProgressUI?
+
+    static func isHostedUnitTest(
+        environment: [String: String],
+        xctestClassPresent: Bool
+    ) -> Bool {
+        return environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCInjectBundleInto"] != nil
+            || xctestClassPresent
+    }
+
+    private static var isRunningHostedUnitTests: Bool {
+        isHostedUnitTest(
+            environment: ProcessInfo.processInfo.environment,
+            xctestClassPresent: NSClassFromString("XCTestCase") != nil
+        )
+    }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Xcode 的 Hosted Unit Tests 会启动 app executable。测试期间必须在创建
+        // WordBook、权限弹窗、状态栏和提醒定时器之前退出，避免接触真实用户数据。
+        guard !Self.isRunningHostedUnitTests else {
+            NSLog("Hosted Unit Tests：跳过 QuickDict 运行时初始化")
+            return
+        }
+
         guard !hasAnotherQuickDictInstance() else {
             NSLog("检测到已有 QuickDict 实例在运行，退出当前实例")
             NSApp.terminate(nil)
@@ -21,23 +116,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         ProcessInfo.processInfo.disableAutomaticTermination("QuickDict keeps review reminders scheduled")
         
+        #if !APP_STORE
         // 检查辅助功能权限
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
         let accessibilityEnabled = AXIsProcessTrustedWithOptions(options as CFDictionary)
+        #endif
 
         // 启动 WordBook（会自动迁移旧 JSON）
         _ = WordBook.shared
 
+        let serviceProvider = QuickDictServiceProvider { [weak self] selectedText in
+            self?.showDictionary(for: selectedText)
+        }
+        quickDictServiceProvider = serviceProvider
+        NSApp.servicesProvider = serviceProvider
+
         DispatchQueue.main.async { [weak self] in
             self?.setupStatusItem()
             self?.setupPopover()
+            #if !APP_STORE
             self?.registerGlobalHotkey()
+            #endif
             self?.updateStatusBadge()
 
+            #if !APP_STORE
             // 显示权限状态
             if !accessibilityEnabled {
                 self?.showAccessibilityAlert()
             }
+            #endif
 
             // 首次启动提示下载 ECDICT
             self?.checkECDICTAvailability()
@@ -47,6 +154,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+#if !APP_STORE
     func showAccessibilityAlert() {
         let alert = NSAlert()
         alert.messageText = "需要辅助功能权限"
@@ -60,6 +168,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
         }
     }
+#endif
     
     func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -71,10 +180,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "测试查词 (手动)", action: #selector(testLookup), keyEquivalent: "t"))
         menu.addItem(NSMenuItem.separator())
+#if APP_STORE
+        menu.addItem(NSMenuItem(title: "选中文本后，从当前 App 的“服务”菜单选择“用快捷查词查询”", action: nil, keyEquivalent: ""))
+#else
         menu.addItem(NSMenuItem(title: "快捷键 ⌃L : 查词（任意 App 选中后按）", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "快捷键 ⇧⌥B : 打开收藏库（全局）", action: nil, keyEquivalent: ""))
+#endif
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "打开单词本", action: #selector(openWordBook), keyEquivalent: "b"))
+        menu.addItem(NSMenuItem(title: "导出数据备份…", action: #selector(exportDataBackup), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "导入数据备份…", action: #selector(importDataBackup), keyEquivalent: ""))
         let reviewItem = NSMenuItem(title: "开始复习", action: #selector(startReview), keyEquivalent: "r")
         menu.addItem(reviewItem)
         menu.addItem(NSMenuItem(title: "复习设置…", action: #selector(openReviewSettings), keyEquivalent: ""))
@@ -83,6 +198,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "从本地文件导入词典…", action: #selector(importECDICT), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "设置 Gemini API Key…", action: #selector(setGeminiAPIKey), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "清除 Gemini API Key", action: #selector(clearGeminiAPIKey), keyEquivalent: ""))
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "帮助与支持…", action: #selector(openSupportPage), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "隐私说明…", action: #selector(openPrivacyPage), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
@@ -105,6 +223,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover.behavior = .transient
     }
     
+#if !APP_STORE
     func registerGlobalHotkey() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
         let accessibilityEnabled = AXIsProcessTrustedWithOptions(options as CFDictionary)
@@ -186,11 +305,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func lookupSelectedText() {
+#if !APP_STORE
         if let selectedText = selectedTextFromAccessibility() {
             NSLog("通过辅助功能获取到选中文本: \(selectedText)")
             showDictionary(for: selectedText)
             return
         }
+#endif
         
         copySelectedTextFromFrontmostApp { [weak self] selectedText in
             guard let self = self else { return }
@@ -204,6 +325,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+#endif
     
     func showDictionary(for text: String) {
         let normalizedText = normalizeSelectedText(text)
@@ -391,6 +513,69 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel.show()
     }
 
+    @objc private func openSupportPage() {
+        NSWorkspace.shared.open(QuickDictPublicLinks.support)
+    }
+
+    @objc private func openPrivacyPage() {
+        NSWorkspace.shared.open(QuickDictPublicLinks.privacy)
+    }
+
+    @objc private func exportDataBackup() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "快捷查词备份_\(Date().formatted(.dateTime.year().month().day())).json"
+        panel.message = "备份包含单词本、查询历史与复习设置，不包含 Gemini API Key 或离线词典。"
+        panel.begin { result in
+            guard result == .OK, let url = panel.url else { return }
+            do {
+                try QuickDictDataTransfer.exportBackup(to: url)
+                let alert = NSAlert()
+                alert.messageText = "数据备份已导出 ✅"
+                alert.informativeText = "Gemini API Key 与 ECDICT 词典未写入备份。"
+                alert.runModal()
+            } catch {
+                let alert = NSAlert(error: error)
+                alert.messageText = "导出失败"
+                alert.runModal()
+            }
+        }
+    }
+
+    @objc private func importDataBackup() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.message = "选择快捷查词 JSON 备份，或选择旧版 Application Support 中的 QuickDict 数据文件夹。为避免遗漏 WAL 中的近期数据，不接受单独的 quickdict.sqlite。"
+        panel.begin { [weak self] result in
+            guard result == .OK, let url = panel.url else { return }
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer {
+                if accessed { url.stopAccessingSecurityScopedResource() }
+            }
+            do {
+                let backup = try QuickDictDataTransfer.previewImport(from: url)
+                let confirmation = NSAlert()
+                confirmation.messageText = "合并这份数据备份？"
+                confirmation.informativeText = "来源包含 \(backup.favorites.count) 条收藏、\(backup.history.count) 条历史。现有数据会保留；重复项不会重复创建。"
+                confirmation.addButton(withTitle: "合并导入")
+                confirmation.addButton(withTitle: "取消")
+                guard confirmation.runModal() == .alertFirstButtonReturn else { return }
+
+                let summary = QuickDictDataTransfer.merge(backup)
+                self?.updateStatusBadge()
+                let done = NSAlert()
+                done.messageText = "数据导入完成 ✅"
+                done.informativeText = "新增收藏 \(summary.insertedFavorites) 条，新增历史 \(summary.insertedHistory) 条。原文件与现有数据均未删除。"
+                done.runModal()
+            } catch {
+                let alert = NSAlert(error: error)
+                alert.messageText = "导入失败"
+                alert.runModal()
+            }
+        }
+    }
+
     @objc func startReview() {
         if let panel = activeReviewPanel, panel.isVisible {
             panel.show()
@@ -464,7 +649,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func downloadECDICT() {
         let alert = NSAlert()
         alert.messageText = "下载 ECDICT 离线词典"
-        alert.informativeText = "将从 GitHub 下载 ECDICT 词典数据库（约 50MB，含 77万词条）到本机。需要联网。"
+        alert.informativeText = "将从 GitHub 获取 ECDICT 词典数据库（\(ECDictionary.downloadSizeDescription)，含 77 万词条）。需要联网并预留足够磁盘空间。"
         alert.addButton(withTitle: "开始下载")
         alert.addButton(withTitle: "取消")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
@@ -473,41 +658,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showECDICTDownloadProgress() {
-        let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 130),
-            styleMask: [.titled],
-            backing: .buffered, defer: false
-        )
-        win.title = "下载 ECDICT…"
-        win.center()
+        if let progressUI = ecdictDownloadProgressUI {
+            progressUI.show()
+            return
+        }
 
-        let label = NSTextField(labelWithString: "正在下载词典… 0%")
-        label.translatesAutoresizingMaskIntoConstraints = false
-        let bar = NSProgressIndicator()
-        bar.isIndeterminate = false
-        bar.minValue = 0; bar.maxValue = 1
-        bar.translatesAutoresizingMaskIntoConstraints = false
+        let progressUI = ECDICTDownloadProgressUI()
+        ecdictDownloadProgressUI = progressUI
+        progressUI.show()
 
-        let content = NSView()
-        content.addSubview(label)
-        content.addSubview(bar)
-        win.contentView = content
-        NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: content.topAnchor, constant: 24),
-            label.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
-            label.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
-            bar.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 14),
-            bar.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
-            bar.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20)
-        ])
-        win.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        ECDictionary.shared.downloadDictionary(progress: { [weak progressUI] progress in
+            progressUI?.updateProgress(progress)
+        }, completion: { [weak self, weak progressUI] result in
+            progressUI?.close()
+            if self?.ecdictDownloadProgressUI === progressUI {
+                self?.ecdictDownloadProgressUI = nil
+            }
 
-        ECDictionary.shared.downloadDictionary(progress: { p in
-            bar.doubleValue = p
-            label.stringValue = String(format: "正在下载词典… %.0f%%", p * 100)
-        }, completion: { result in
-            win.close()
             let done = NSAlert()
             switch result {
             case .success:
@@ -630,7 +797,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let alert = NSAlert()
         alert.messageText = "是否下载离线词典 ECDICT？"
-        alert.informativeText = "仅依赖系统词典可能查不到中文释义。推荐下载 ECDICT（约 50MB，含 77万词条、音标、考试标签）。随时可从菜单重新下载。"
+        alert.informativeText = "仅依赖系统词典可能查不到中文释义。可选下载 ECDICT（\(ECDictionary.downloadSizeDescription)，含 77 万词条、音标和考试标签）。随时可从菜单重新下载。"
         alert.addButton(withTitle: "现在下载")
         alert.addButton(withTitle: "以后再说")
         if alert.runModal() == .alertFirstButtonReturn {
@@ -664,6 +831,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSEvent.removeMonitor(monitor)
         }
         
+        #if !APP_STORE
         if let hotKeyRef2 {
             UnregisterEventHotKey(hotKeyRef2)
         }
@@ -674,8 +842,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let hotKeyHandler {
             RemoveEventHandler(hotKeyHandler)
         }
+        #endif
     }
 
+#if !APP_STORE
     private func selectedTextFromAccessibility() -> String? {
         guard AXIsProcessTrusted() else { return nil }
         
@@ -755,8 +925,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func copySelectedTextFromFrontmostApp(completion: @escaping (String?) -> Void) {
         let pasteboard = NSPasteboard.general
-        let originalSnapshot = snapshotPasteboard(pasteboard)
+        let originalSnapshot = PasteboardSnapshot.capture(from: pasteboard)
         let originalChangeCount = pasteboard.changeCount
+        NSLog("原剪贴板快照：items=\(originalSnapshot.itemCount)，representations=\(originalSnapshot.representationCount)，missing=\(originalSnapshot.missingRepresentationCount)，changeCount=\(originalChangeCount)")
+        guard originalSnapshot.isComplete || originalSnapshot.items.isEmpty else {
+            NSLog("原剪贴板无法完整快照，取消模拟复制以避免数据丢失")
+            completion(nil)
+            return
+        }
         
         let source = CGEventSource(stateID: .hidSystemState)
         let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x08, keyDown: true)
@@ -766,33 +942,65 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         keyDown?.post(tap: .cghidEventTap)
         keyUp?.post(tap: .cghidEventTap)
         
-        waitForCopiedText(
+        waitForCopiedTextToSettle(
             originalChangeCount: originalChangeCount,
-            maxAttempts: 8,
-            interval: 0.1
-        ) { copiedText in
-            self.restorePasteboard(pasteboard, from: originalSnapshot)
-            completion(copiedText)
+            maxAttempts: 15,
+            interval: 0.1,
+            requiredStableObservations: 2
+        ) { decision in
+            switch decision {
+            case let .ready(copiedText, expectedChangeCount):
+                if pasteboard.changeCount == expectedChangeCount,
+                   pasteboard.string(forType: .string) == copiedText {
+                    let restoreResult = originalSnapshot.restore(to: pasteboard)
+                    NSLog("剪贴板恢复：attempted=\(restoreResult.attempted)，set=\(restoreResult.representationsAccepted)，write=\(restoreResult.writeSucceeded)，exact=\(restoreResult.exactMatch)，changeCount=\(restoreResult.changeCountBeforeRestore)->\(restoreResult.changeCountAfterRestore)")
+                    if !restoreResult.writeSucceeded || !restoreResult.exactMatch {
+                        NSLog("剪贴板恢复未通过完整性校验")
+                    }
+                } else {
+                    NSLog("复制完成后剪贴板再次变化，保留用户的新内容")
+                }
+                completion(copiedText)
+
+            case let .preserveCurrentClipboard(copiedText):
+                NSLog("复制稳定前检测到不同剪贴板内容，跳过恢复")
+                completion(copiedText)
+
+            case .unavailable:
+                completion(nil)
+
+            case .waiting:
+                assertionFailure("等待态不应离开轮询")
+                completion(nil)
+            }
         }
     }
     
-    private func waitForCopiedText(
+    private func waitForCopiedTextToSettle(
         originalChangeCount: Int,
         maxAttempts: Int,
         interval: TimeInterval,
-        completion: @escaping (String?) -> Void
+        requiredStableObservations: Int,
+        completion: @escaping (PasteboardCopySettleDecision) -> Void
     ) {
         let pasteboard = NSPasteboard.general
+        var state = PasteboardCopySettleState()
         
         func poll(attempt: Int) {
-            if pasteboard.changeCount != originalChangeCount {
-                let copiedText = pasteboard.string(forType: .string)
-                completion(copiedText)
+            let decision = state.observe(
+                originalChangeCount: originalChangeCount,
+                currentChangeCount: pasteboard.changeCount,
+                currentText: pasteboard.string(forType: .string),
+                requiredStableObservations: requiredStableObservations
+            )
+
+            if decision != .waiting {
+                completion(decision)
                 return
             }
             
             guard attempt < maxAttempts else {
-                completion(nil)
+                completion(state.timeoutDecision())
                 return
             }
             
@@ -805,6 +1013,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             poll(attempt: 1)
         }
     }
+#endif
     
     private func normalizeSelectedText(_ text: String) -> String {
         text
@@ -814,12 +1023,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
+#if !APP_STORE
     private func showLookupFailure() {
         let panel = HUDPanel(
             word: "未获取到选中文本",
             definition: """
             请确认以下几点：
-            1. 已在“系统设置 → 隐私与安全性 → 辅助功能”中启用 QuickDict
+            1. 已在“系统设置 → 隐私与安全性”中启用快捷查词所需权限
             2. 当前应用允许复制所选文本
             3. 选中的是可复制的纯文本
             
@@ -828,40 +1038,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         panel.show()
     }
+#endif
     
-    private func snapshotPasteboard(_ pasteboard: NSPasteboard) -> [[NSPasteboard.PasteboardType: Data]] {
-        guard let items = pasteboard.pasteboardItems else { return [] }
-        
-        return items.map { item in
-            var snapshot: [NSPasteboard.PasteboardType: Data] = [:]
-            for type in item.types {
-                if let data = item.data(forType: type) {
-                    snapshot[type] = data
-                }
-            }
-            return snapshot
-        }
-    }
-    
-    private func restorePasteboard(_ pasteboard: NSPasteboard, from snapshot: [[NSPasteboard.PasteboardType: Data]]) {
-        pasteboard.clearContents()
-        
-        guard !snapshot.isEmpty else { return }
-        
-        let items: [NSPasteboardItem] = snapshot.map { entry in
-            let item = NSPasteboardItem()
-            for (type, data) in entry {
-                item.setData(data, forType: type)
-            }
-            return item
-        }
-        
-        pasteboard.writeObjects(items)
-    }
-    
+#if !APP_STORE
     private func fourCharCode(_ string: String) -> OSType {
         string.utf8.reduce(0) { ($0 << 8) + OSType($1) }
     }
+#endif
     
     private func hasAnotherQuickDictInstance() -> Bool {
         let currentPID = ProcessInfo.processInfo.processIdentifier
@@ -875,13 +1058,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             
             let myBundleID = Bundle.main.bundleIdentifier
             let sameBundleID = (myBundleID != nil) && (app.bundleIdentifier == myBundleID)
+            #if APP_STORE
+            return sameBundleID
+            #else
             let looksLikeQuickDict = executableName == "QuickDict"
                 || bundleName == "QuickDict.app"
                 || bundleName == "快捷查词.app"
                 || localizedName == "QuickDict"
                 || localizedName == "快捷查词"
-            
+
             return sameBundleID || looksLikeQuickDict
+            #endif
         }
     }
 }

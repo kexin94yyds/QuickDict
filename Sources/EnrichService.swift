@@ -25,6 +25,7 @@ struct OwnContext {
 /// 把外部 + 本地的扩展信息聚合在一起（异步加载、互不阻塞）
 final class EnrichService {
     static let shared = EnrichService()
+    private static let userAgent = "QuickDict-mac/1.0 (https://kexin94yyds.github.io/quickdict-support/)"
 
     private let session: URLSession
     private let imagesDir: URL
@@ -56,7 +57,7 @@ final class EnrichService {
             return
         }
         var req = URLRequest(url: url)
-        req.setValue("QuickDict-mac/1.0 (https://github.com/local)", forHTTPHeaderField: "User-Agent")
+        req.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         let task = session.dataTask(with: req) { [weak self] data, _, err in
             guard let self, let data, err == nil,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -107,7 +108,7 @@ final class EnrichService {
             + "&generator=search&gsrsearch=\(encoded)&gsrlimit=6"
         guard let url = URL(string: urlStr) else { completion(nil); return }
         var req = URLRequest(url: url)
-        req.setValue("QuickDict-mac/1.0", forHTTPHeaderField: "User-Agent")
+        req.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         let task = session.dataTask(with: req) { [weak self] data, _, err in
             guard let self, let data, err == nil,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -206,7 +207,7 @@ final class EnrichService {
             completion(nil); return
         }
         var req = URLRequest(url: url)
-        req.setValue("QuickDict-mac/1.0 (https://github.com/local)", forHTTPHeaderField: "User-Agent")
+        req.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         let task = session.dataTask(with: req) { data, _, _ in
             guard let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -238,7 +239,7 @@ final class EnrichService {
         for (i, urlStr) in endpoints.enumerated() {
             guard let url = URL(string: urlStr) else { continue }
             var req = URLRequest(url: url)
-            req.setValue("QuickDict-mac/1.0", forHTTPHeaderField: "User-Agent")
+            req.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
             group.enter()
             let task = session.dataTask(with: req) { data, _, _ in
                 let words = Self.parseDatamuseWords(data: data)

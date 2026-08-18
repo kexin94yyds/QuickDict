@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#17211c" flood-opacity="0.18"/>
+    </filter>
+    <filter id="smallShadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#111713" flood-opacity="0.24"/>
+    </filter>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8f6f0"/>
+      <stop offset="1" stop-color="#e8efe9"/>
+    </linearGradient>
+  </defs>
+  <rect width="1440" height="900" fill="url(#paper)"/>
+  <circle cx="1260" cy="90" r="210" fill="#bbd7c8" opacity="0.34"/>
+  <circle cx="160" cy="830" r="260" fill="#d9c9a8" opacity="0.25"/>
+
+  <text x="120" y="112" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="54" font-weight="700" fill="#17211c">选中文本，从“服务”立即查询</text>
+  <text x="123" y="159" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="23" fill="#53635a">使用 macOS 标准文本服务，不需要键盘监控权限</text>
+
+  <g filter="url(#shadow)">
+    <rect x="118" y="220" width="930" height="590" rx="16" fill="#ffffff"/>
+    <rect x="118" y="220" width="930" height="54" rx="16" fill="#ecebe8"/>
+    <rect x="118" y="255" width="930" height="19" fill="#ecebe8"/>
+    <circle cx="149" cy="247" r="7" fill="#ff5f57"/>
+    <circle cx="173" cy="247" r="7" fill="#febc2e"/>
+    <circle cx="197" cy="247" r="7" fill="#28c840"/>
+    <text x="583" y="254" text-anchor="middle" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="15" font-weight="600" fill="#4d514e">学习笔记</text>
+
+    <text x="180" y="345" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="25" font-weight="600" fill="#202722">今天读到一个很喜欢的词：</text>
+    <rect x="180" y="383" width="193" height="39" rx="5" fill="#86b8ff" opacity="0.78"/>
+    <text x="189" y="411" font-family="Helvetica Neue, Arial, sans-serif" font-size="29" font-weight="600" fill="#10233e">serendipity</text>
+    <text x="382" y="411" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="24" fill="#3a443e">——意外发现美好事物的幸运。</text>
+    <text x="180" y="478" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="21" fill="#717a74">保持选中，从“服务”菜单选择快捷查词。</text>
+    <line x1="180" y1="524" x2="790" y2="524" stroke="#e1e5e1" stroke-width="2"/>
+    <line x1="180" y1="567" x2="900" y2="567" stroke="#edf0ed" stroke-width="2"/>
+    <line x1="180" y1="610" x2="840" y2="610" stroke="#edf0ed" stroke-width="2"/>
+    <line x1="180" y1="653" x2="920" y2="653" stroke="#edf0ed" stroke-width="2"/>
+  </g>
+
+  <g filter="url(#smallShadow)">
+    <rect x="786" y="304" width="526" height="438" rx="22" fill="#26322c" fill-opacity="0.96"/>
+    <circle cx="1274" cy="336" r="15" fill="#3b4942"/>
+    <text x="1274" y="343" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" fill="#e6ece8">×</text>
+    <text x="828" y="350" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="14" font-weight="600" fill="#b4c8bc">系统词典</text>
+    <text x="828" y="401" font-family="Helvetica Neue, Arial, sans-serif" font-size="38" font-weight="700" fill="#ffffff">serendipity</text>
+    <text x="828" y="432" font-family="Helvetica Neue, Arial, sans-serif" font-size="16" fill="#b8c6be">/ˌserənˈdipədē/ · noun</text>
+    <line x1="828" y1="459" x2="1268" y2="459" stroke="#526159"/>
+    <text x="828" y="492" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="16" font-weight="700" fill="#a9d7bd">释义</text>
+    <text x="828" y="526" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="19" fill="#f1f5f2">意外发现有趣或美好事物的幸运。</text>
+    <text x="828" y="566" font-family="Helvetica Neue, Arial, sans-serif" font-size="18" fill="#d4ddd7">the occurrence of events by chance</text>
+    <text x="828" y="592" font-family="Helvetica Neue, Arial, sans-serif" font-size="18" fill="#d4ddd7">in a happy or beneficial way</text>
+    <line x1="828" y1="620" x2="1268" y2="620" stroke="#526159"/>
+    <text x="828" y="652" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="16" font-weight="700" fill="#a9d7bd">你的语境</text>
+    <text x="828" y="684" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="16" fill="#dce4df">今天读到一个很喜欢的词。</text>
+    <rect x="1178" y="681" width="90" height="34" rx="17" fill="#f4f7f5"/>
+    <text x="1223" y="704" text-anchor="middle" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="14" font-weight="600" fill="#26322c">收藏</text>
+  </g>
+
+  <g>
+    <rect x="120" y="835" width="118" height="38" rx="19" fill="#17211c"/>
+    <text x="179" y="861" text-anchor="middle" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="16" font-weight="700" fill="#ffffff">服务</text>
+    <text x="255" y="861" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="16" font-weight="600" fill="#455149">查询选中文本</text>
+  </g>
+</svg>

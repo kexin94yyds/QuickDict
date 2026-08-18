@@ -1,4 +1,15 @@
 .DS_Store
 .build/
 .swiftpm/
-build/backups/
+build/
+DerivedData/
+*.xcarchive
+*.xcresult
+*.xcodeproj/xcuserdata/
+.cunzhi-memory/
+.cunzhi-knowledge/
+.env
+.env.*
+*.p12
+*.mobileprovision
+*.provisionprofile
