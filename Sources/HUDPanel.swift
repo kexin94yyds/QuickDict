@@ -9,7 +9,9 @@ class HUDPanel: NSPanel {
     private let imageWords: [String]
 
     private var globalClickMonitor: Any?
+#if !APP_STORE
     private var globalKeyMonitor: Any?
+#endif
     private var localKeyMonitor: Any?
     private var autoCloseWorkItem: DispatchWorkItem?
     private var favoriteButton: NSButton?
@@ -284,12 +286,14 @@ class HUDPanel: NSPanel {
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             self?.closePanel()
         }
+#if !APP_STORE
         globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard Self.isPlainCommandB(event) else { return }
             DispatchQueue.main.async {
                 self?.addToFavorites()
             }
         }
+#endif
     }
 
     private static func isPlainCommandB(_ event: NSEvent) -> Bool {
@@ -305,7 +309,9 @@ class HUDPanel: NSPanel {
         autoCloseWorkItem?.cancel()
         autoCloseWorkItem = nil
         if let m = globalClickMonitor { NSEvent.removeMonitor(m); globalClickMonitor = nil }
+#if !APP_STORE
         if let m = globalKeyMonitor { NSEvent.removeMonitor(m); globalKeyMonitor = nil }
+#endif
         if let m = localKeyMonitor { NSEvent.removeMonitor(m); localKeyMonitor = nil }
         self.orderOut(nil)
     }
@@ -321,7 +327,9 @@ class HUDPanel: NSPanel {
 
     deinit {
         if let m = globalClickMonitor { NSEvent.removeMonitor(m) }
+#if !APP_STORE
         if let m = globalKeyMonitor { NSEvent.removeMonitor(m) }
+#endif
         if let m = localKeyMonitor { NSEvent.removeMonitor(m) }
     }
 

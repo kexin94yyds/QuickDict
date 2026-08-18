@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="22" stdDeviation="28" flood-color="#16251c" flood-opacity="0.2"/>
+    </filter>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eef4ee"/>
+      <stop offset="1" stop-color="#e8e1d3"/>
+    </linearGradient>
+  </defs>
+  <rect width="1440" height="900" fill="url(#bg)"/>
+  <rect x="1080" y="-70" width="470" height="300" rx="150" fill="#a8cfba" opacity="0.26" transform="rotate(12 1080 -70)"/>
+
+  <text x="120" y="105" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="54" font-weight="700" fill="#17211c">把想记住的词，留在这里</text>
+  <text x="123" y="153" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="23" fill="#53635a">收藏、语境、历史和复习排期集中管理</text>
+
+  <g filter="url(#shadow)">
+    <rect x="135" y="207" width="1170" height="624" rx="18" fill="#ffffff"/>
+    <rect x="135" y="207" width="1170" height="52" rx="18" fill="#eeeeec"/>
+    <rect x="135" y="241" width="1170" height="18" fill="#eeeeec"/>
+    <circle cx="165" cy="233" r="7" fill="#ff5f57"/>
+    <circle cx="189" cy="233" r="7" fill="#febc2e"/>
+    <circle cx="213" cy="233" r="7" fill="#28c840"/>
+    <text x="720" y="240" text-anchor="middle" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="15" font-weight="600" fill="#4d514e">单词本</text>
+
+    <rect x="175" y="286" width="246" height="41" rx="9" fill="#e4ece6"/>
+    <rect x="179" y="290" width="116" height="33" rx="7" fill="#ffffff"/>
+    <text x="237" y="312" text-anchor="middle" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="15" font-weight="600" fill="#1f2923">收藏</text>
+    <text x="358" y="312" text-anchor="middle" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="15" fill="#667168">历史</text>
+    <text x="447" y="312" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="14" fill="#778179">12 个收藏 · 3 个今天复习</text>
+    <rect x="948" y="286" width="310" height="41" rx="10" fill="#f6f7f6" stroke="#d7ddd8"/>
+    <circle cx="974" cy="306" r="8" fill="none" stroke="#87928b" stroke-width="2"/>
+    <line x1="980" y1="312" x2="987" y2="319" stroke="#87928b" stroke-width="2"/>
+    <text x="997" y="312" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="14" fill="#9aa29d">搜索单词、语境或释义</text>
+
+    <rect x="175" y="350" width="1083" height="48" fill="#f3f5f3"/>
+    <text x="203" y="380" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="14" font-weight="700" fill="#59645d">单词</text>
+    <text x="390" y="380" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="14" font-weight="700" fill="#59645d">语境 / 释义快照</text>
+    <text x="984" y="380" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="14" font-weight="700" fill="#59645d">下次复习</text>
+    <text x="1167" y="380" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="14" font-weight="700" fill="#59645d">掌握度</text>
+
+    <g font-family="Hiragino Sans GB, PingFang SC, sans-serif">
+      <rect x="175" y="398" width="1083" height="82" fill="#ffffff"/>
+      <text x="203" y="432" font-family="Helvetica Neue, Arial, sans-serif" font-size="20" font-weight="700" fill="#18221c">serendipity</text>
+      <text x="203" y="456" font-size="13" fill="#8a948d">名词</text>
+      <text x="390" y="431" font-size="16" fill="#313b35">意外发现美好事物的幸运</text>
+      <text x="390" y="455" font-size="13" fill="#7a857e">今天读到一个很喜欢的词。</text>
+      <rect x="970" y="418" width="88" height="29" rx="14" fill="#e8f4ec"/>
+      <text x="1014" y="438" text-anchor="middle" font-size="13" font-weight="600" fill="#2f6c48">今天</text>
+      <text x="1183" y="438" font-size="14" fill="#536159">学习中</text>
+      <line x1="175" y1="480" x2="1258" y2="480" stroke="#e7ebe8"/>
+
+      <rect x="175" y="481" width="1083" height="82" fill="#fafbfa"/>
+      <text x="203" y="515" font-family="Helvetica Neue, Arial, sans-serif" font-size="20" font-weight="700" fill="#18221c">resilient</text>
+      <text x="203" y="539" font-size="13" fill="#8a948d">形容词</text>
+      <text x="390" y="514" font-size="16" fill="#313b35">能够迅速恢复；有韧性的</text>
+      <text x="390" y="538" font-size="13" fill="#7a857e">A resilient system recovers gracefully.</text>
+      <rect x="970" y="501" width="88" height="29" rx="14" fill="#f2eee3"/>
+      <text x="1014" y="521" text-anchor="middle" font-size="13" font-weight="600" fill="#77633d">明天</text>
+      <text x="1183" y="521" font-size="14" fill="#536159">熟悉</text>
+      <line x1="175" y1="563" x2="1258" y2="563" stroke="#e7ebe8"/>
+
+      <rect x="175" y="564" width="1083" height="82" fill="#ffffff"/>
+      <text x="203" y="598" font-family="Helvetica Neue, Arial, sans-serif" font-size="20" font-weight="700" fill="#18221c">nuance</text>
+      <text x="203" y="622" font-size="13" fill="#8a948d">名词</text>
+      <text x="390" y="597" font-size="16" fill="#313b35">细微但重要的差别</text>
+      <text x="390" y="621" font-size="13" fill="#7a857e">Pay attention to the nuance in her answer.</text>
+      <rect x="970" y="584" width="88" height="29" rx="14" fill="#e8f4ec"/>
+      <text x="1014" y="604" text-anchor="middle" font-size="13" font-weight="600" fill="#2f6c48">今天</text>
+      <text x="1183" y="604" font-size="14" fill="#536159">学习中</text>
+      <line x1="175" y1="646" x2="1258" y2="646" stroke="#e7ebe8"/>
+
+      <rect x="175" y="647" width="1083" height="82" fill="#fafbfa"/>
+      <text x="203" y="681" font-family="Helvetica Neue, Arial, sans-serif" font-size="20" font-weight="700" fill="#18221c">deliberate</text>
+      <text x="203" y="705" font-size="13" fill="#8a948d">形容词</text>
+      <text x="390" y="680" font-size="16" fill="#313b35">深思熟虑的；审慎的</text>
+      <text x="390" y="704" font-size="13" fill="#7a857e">Make deliberate choices.</text>
+      <rect x="970" y="667" width="88" height="29" rx="14" fill="#eef0f4"/>
+      <text x="1014" y="687" text-anchor="middle" font-size="13" font-weight="600" fill="#5d667a">3 天后</text>
+      <text x="1183" y="687" font-size="14" fill="#536159">已掌握</text>
+    </g>
+
+    <line x1="175" y1="750" x2="1258" y2="750" stroke="#e4e8e5"/>
+    <rect x="175" y="769" width="76" height="34" rx="8" fill="#f5f6f5" stroke="#d6dcd8"/>
+    <text x="213" y="791" text-anchor="middle" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="13" fill="#4d5851">刷新</text>
+    <rect x="261" y="769" width="104" height="34" rx="8" fill="#1f6f4a"/>
+    <text x="313" y="791" text-anchor="middle" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="13" font-weight="600" fill="#ffffff">开始复习</text>
+    <rect x="1136" y="769" width="122" height="34" rx="8" fill="#f5f6f5" stroke="#d6dcd8"/>
+    <text x="1197" y="791" text-anchor="middle" font-family="Hiragino Sans GB, PingFang SC, sans-serif" font-size="13" fill="#4d5851">导出 Anki</text>
+  </g>
+</svg>

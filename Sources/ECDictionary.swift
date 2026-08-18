@@ -54,6 +54,9 @@ final class ECDictionary {
     /// 默认下载源（精简版 stardict.7z 已经过大；优先使用 ecdict-sqlite-28 release）
     /// release 页：https://github.com/skywind3000/ECDICT/releases
     static let defaultDownloadURL = URL(string: "https://github.com/skywind3000/ECDICT/releases/download/1.0.28/ecdict-sqlite-28.zip")!
+    static let expectedArchiveBytes: Int64 = 216_765_132
+    static let expectedDatabaseBytes: Int64 = 851_288_064
+    static let downloadSizeDescription = "下载约 217 MB，解压后约 851 MB"
 
     private init() {
         if FileManager.default.fileExists(atPath: dbURL.path) {
@@ -303,7 +306,9 @@ final class ECDictionary {
                 DispatchQueue.main.async { completion(.failure(err)) }
             case .success(let tmpURL):
                 do {
-                    let extracted = try self.extractAndInstall(archive: tmpURL)
+                    let extracted = try Self.withTemporaryDownloadedArchive(at: tmpURL) { archiveURL in
+                        try self.extractAndInstall(archive: archiveURL)
+                    }
                     self.openIfPossible()
                     DispatchQueue.main.async { completion(.success(extracted)) }
                 } catch {
@@ -314,6 +319,17 @@ final class ECDictionary {
         let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
         let task = session.downloadTask(with: url)
         task.resume()
+    }
+
+    /// URLSession's download location is ephemeral, so DownloadDelegate moves
+    /// the archive to a stable temporary URL. Always remove that copy after the
+    /// install attempt, including when extraction or validation throws.
+    static func withTemporaryDownloadedArchive<T>(
+        at archiveURL: URL,
+        operation: (URL) throws -> T
+    ) rethrows -> T {
+        defer { try? FileManager.default.removeItem(at: archiveURL) }
+        return try operation(archiveURL)
     }
 
     /// 从用户选择的本地文件导入（支持 .db / .zip）
